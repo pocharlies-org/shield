@@ -2,6 +2,7 @@ package moderation
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +31,40 @@ func TestInMemoryQueuePublishAndConsume(t *testing.T) {
 		assert.Equal(t, event, got)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
+	}
+}
+
+func TestInMemoryQueueConcurrentPublishAndClose(t *testing.T) {
+	q := NewInMemoryQueue(32)
+	var publishers sync.WaitGroup
+	errs := make(chan error, 100)
+	for range 100 {
+		publishers.Go(func() {
+			errs <- q.Publish(context.Background(), IncomingEvent{EventID: "concurrent"})
+		})
+	}
+
+	consumerDone := make(chan struct{})
+	consumed := 0
+	go func() {
+		for range q.Consume() {
+			consumed++
+		}
+		close(consumerDone)
+	}()
+	q.Close()
+	publishers.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			require.ErrorIs(t, err, ErrQueueClosed)
+		}
+	}
+	select {
+	case <-consumerDone:
+		assert.LessOrEqual(t, consumed, 100)
+	case <-time.After(time.Second):
+		t.Fatal("consumer did not stop")
 	}
 }
 

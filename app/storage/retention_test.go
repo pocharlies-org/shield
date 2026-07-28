@@ -32,8 +32,21 @@ func TestRetentionService_CleanNow(t *testing.T) {
 		id INTEGER PRIMARY KEY AUTOINCREMENT, gid TEXT DEFAULT '', tenant_id TEXT DEFAULT '',
 		event_type TEXT DEFAULT '', event_id TEXT DEFAULT '', chat_id INTEGER DEFAULT 0,
 		user_id INTEGER DEFAULT 0, correlation_id TEXT DEFAULT '', idempotency_key TEXT DEFAULT '',
-		status TEXT DEFAULT '', timestamp DATETIME)`)
+		status TEXT DEFAULT '', received_at DATETIME)`)
 	require.NoError(t, err)
+
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS incident_comments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT DEFAULT '', created_at DATETIME)`)
+	require.NoError(t, err)
+
+	for _, schema := range []string{
+		`CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, time DATETIME)`,
+		`CREATE TABLE IF NOT EXISTS spam (id INTEGER PRIMARY KEY AUTOINCREMENT, time DATETIME)`,
+		`CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report_time DATETIME)`,
+	} {
+		_, err = db.ExecContext(ctx, schema)
+		require.NoError(t, err)
+	}
 
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS usage_counters (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, gid TEXT DEFAULT '', tenant_id TEXT DEFAULT '',
@@ -51,11 +64,11 @@ func TestRetentionService_CleanNow(t *testing.T) {
 		"test", now, now)
 	require.NoError(t, err)
 
-	_, err = db.ExecContext(ctx, `INSERT INTO incoming_events (tenant_id, timestamp) VALUES (?, ?)`,
+	_, err = db.ExecContext(ctx, `INSERT INTO incoming_events (tenant_id, received_at) VALUES (?, ?)`,
 		"test", now.Add(-48*time.Hour))
 	require.NoError(t, err)
 
-	_, err = db.ExecContext(ctx, `INSERT INTO incoming_events (tenant_id, timestamp) VALUES (?, ?)`,
+	_, err = db.ExecContext(ctx, `INSERT INTO incoming_events (tenant_id, received_at) VALUES (?, ?)`,
 		"test", now)
 	require.NoError(t, err)
 
@@ -97,6 +110,15 @@ func TestRetentionService_ZeroTTL_NoDelete(t *testing.T) {
 	require.NoError(t, err)
 	_, exists := report["incidents"]
 	assert.False(t, exists)
+}
+
+func TestRetentionService_CleanTableReturnsSQLError(t *testing.T) {
+	db := newRetentionDB(t)
+	svc := NewRetentionService(db, RetentionConfig{})
+
+	_, err := svc.cleanTable(t.Context(), "missing_table", "created_at", time.Hour)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "delete expired rows")
 }
 
 func TestRetentionService_RunDisabledReturns(t *testing.T) {

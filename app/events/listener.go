@@ -93,6 +93,8 @@ type TelegramListener struct {
 	SlowPathChatEngine      SlowPathChatChecker
 	CandidateGenerator      CandidateGenerator
 	AutoLearner             AutoLearner
+	CommunityModerator      CommunityModerator
+	OnReady                 func()
 
 	adminHandler     *admin
 	reportsHandler   *userReports
@@ -300,6 +302,9 @@ func (l *TelegramListener) eventLoop(ctx context.Context) error {
 	u.Timeout = 60
 
 	updates := l.TbAPI.GetUpdatesChan(u)
+	if l.OnReady != nil {
+		l.OnReady()
+	}
 	log.Printf("[DEBUG] start listening for updates")
 	for {
 		select {
@@ -326,9 +331,15 @@ func (l *TelegramListener) eventLoop(ctx context.Context) error {
 }
 
 func (l *TelegramListener) handleUpdate(ctx context.Context, update tbapi.Update) error {
-	if update.Message != nil && l.isAdminChat(update.Message.Chat.ID, update.Message.From.UserName, update.Message.From.ID) {
+	var fromUserName string
+	var fromUserID int64
+	if update.Message != nil && update.Message.From != nil {
+		fromUserName = update.Message.From.UserName
+		fromUserID = update.Message.From.ID
+	}
+	if update.Message != nil && l.isAdminChat(update.Message.Chat.ID, fromUserName, fromUserID) {
 		l.incMetric("admin_messages")
-		if update.Message.ReplyToMessage != nil && l.SuperUsers.IsSuper(update.Message.From.UserName, update.Message.From.ID) {
+		if update.Message.ReplyToMessage != nil && l.SuperUsers.IsSuper(fromUserName, fromUserID) {
 			if l.procSuperReply(ctx, update) {
 				return nil
 			}
@@ -397,7 +408,7 @@ func (l *TelegramListener) handleUpdate(ctx context.Context, update tbapi.Update
 		return nil
 	}
 
-	fromSuper := l.SuperUsers.IsSuper(update.Message.From.UserName, update.Message.From.ID) ||
+	fromSuper := l.SuperUsers.IsSuper(fromUserName, fromUserID) ||
 		l.isLinkedChannel(update.Message)
 	if fromSuper && l.procSuperCommand(ctx, update) {
 		return nil
@@ -409,14 +420,22 @@ func (l *TelegramListener) handleUpdate(ctx context.Context, update tbapi.Update
 		}
 	}
 
-	if !fromSuper && l.isReportCommand(update.Message.Text) && update.Message.ReplyToMessage == nil {
-		log.Printf("[DEBUG] deleting orphaned /report command from %s (%d)", update.Message.From.UserName, update.Message.From.ID)
+	if !fromSuper && update.Message.From != nil &&
+		l.isReportCommand(update.Message.Text) && update.Message.ReplyToMessage == nil {
+		log.Printf("[DEBUG] deleting orphaned /report command from %s (%d)", fromUserName, fromUserID)
 		_, err := l.TbAPI.Request(tbapi.DeleteMessageConfig{BaseChatMessage: tbapi.BaseChatMessage{
 			MessageID: update.Message.MessageID, ChatConfig: tbapi.ChatConfig{ChatID: update.Message.Chat.ID},
 		}})
 		if err != nil {
 			log.Printf("[WARN] failed to delete orphaned /report message %d: %v", update.Message.MessageID, err)
 		}
+		return nil
+	}
+
+	if handled, err := l.handleCommunityMessage(ctx, update); err != nil {
+		log.Printf("[WARN] failed to apply community rules: %v", err)
+		return nil
+	} else if handled {
 		return nil
 	}
 
@@ -837,7 +856,7 @@ func (l *TelegramListener) sendChatReply(ctx context.Context, update tbapi.Updat
 	if text == "" {
 		return
 	}
-	resp := bot.Response{Send: true, Text: text, ReplyTo: msg.MessageID}
+	resp := bot.Response{Send: true, Text: text, ReplyTo: msg.MessageID, MessageThreadID: msg.MessageThreadID}
 	if err := l.sendBotResponse(resp, msg.Chat.ID, NotificationDefault); err != nil {
 		log.Printf("[WARN] failed to send chat reply: %v", err)
 	}

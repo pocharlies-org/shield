@@ -218,6 +218,7 @@ func TestUserReports_HandleReportCallback_SecurityValidation(t *testing.T) {
 			tbAPI:        mockAPI,
 			adminChatID:  456,
 			primChatIDs:  []int64{200},
+			superUsers:   SuperUsers{"admin"},
 			ReportConfig: ReportConfig{Storage: mockReports},
 		}
 
@@ -387,6 +388,7 @@ func TestUserReports_HandleReportCallback_SecurityValidation(t *testing.T) {
 		rep := &userReports{
 			adminChatID: 456,
 			primChatIDs: []int64{200},
+			superUsers:  SuperUsers{"admin"},
 		}
 
 		query := &tbapi.CallbackQuery{
@@ -408,6 +410,7 @@ func TestUserReports_HandleReportCallback_SecurityValidation(t *testing.T) {
 		rep := &userReports{
 			adminChatID: 456,
 			primChatIDs: []int64{200},
+			superUsers:  SuperUsers{"admin"},
 		}
 
 		query := &tbapi.CallbackQuery{

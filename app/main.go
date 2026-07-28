@@ -56,7 +56,7 @@ type options struct {
 	} `group:"delete" namespace:"delete" env-namespace:"DELETE"`
 
 	CAS struct {
-		API       string        `long:"api" env:"API" default:"https://api.cas.chat" description:"CAS API"`
+		API       string        `long:"api" env:"API" description:"CAS API (disabled when empty)"`
 		Timeout   time.Duration `long:"timeout" env:"TIMEOUT" default:"5s" description:"CAS timeout"`
 		UserAgent string        `long:"user-agent" env:"USER_AGENT" description:"User-Agent header for CAS API requests"`
 	} `group:"cas" namespace:"cas" env-namespace:"CAS"`
@@ -150,6 +150,17 @@ type options struct {
 		RateLimit        int           `long:"rate-limit" env:"RATE_LIMIT" default:"1" description:"max reports per user per period"`
 		RatePeriod       time.Duration `long:"rate-period" env:"RATE_PERIOD" default:"1m" description:"rate limit time period"`
 	} `group:"report" namespace:"report" env-namespace:"REPORT"`
+
+	Community struct {
+		Enabled                    bool     `long:"enabled" env:"ENABLED" description:"enable deterministic community topic rules"`
+		ChatID                     int64    `long:"chat-id" env:"CHAT_ID" description:"Telegram forum chat id for community rules"`
+		PresentationThreadID       int      `long:"presentation-thread-id" env:"PRESENTATION_THREAD_ID" default:"3" description:"presentations topic id"`
+		ContestThreadID            int      `long:"contest-thread-id" env:"CONTEST_THREAD_ID" default:"6" description:"contest topic id"`
+		ContestID                  string   `long:"contest-id" env:"CONTEST_ID" description:"stable id for the active contest; change it for every new contest"`
+		ApplyActions               bool     `long:"apply-actions" env:"APPLY_ACTIONS" description:"apply community-rule actions; disabled means shadow mode"`
+		AllowEmptyPresentationText bool     `long:"allow-empty-presentation-text" env:"ALLOW_EMPTY_PRESENTATION_TEXT" description:"allow a single-photo presentation without caption text"`
+		PrivateConsentTerms        []string `long:"private-consent-term" env:"PRIVATE_CONSENT_TERMS" env-delim:"," description:"accepted phrases that state private-message consent"`
+	} `group:"community" namespace:"community" env-namespace:"COMMUNITY"`
 
 	Files struct {
 		SamplesDataPath string        `long:"samples" env:"SAMPLES" description:"samples data path, defaults to dynamic data path"`
@@ -245,7 +256,10 @@ func main() {
 		os.Exit(2)
 	}
 
-	masked := []string{opts.Telegram.Token, opts.OpenAI.Token, opts.Gemini.Token}
+	masked := []string{
+		opts.Telegram.Token, opts.OpenAI.Token, opts.Gemini.Token,
+		opts.DataBaseURL, opts.CAS.API, opts.CAS.UserAgent,
+	}
 	if opts.Server.AuthPasswd != "auto" && opts.Server.AuthPasswd != "" {
 		// auto passwd should not be masked as we print it
 		masked = append(masked, opts.Server.AuthPasswd)
@@ -353,7 +367,9 @@ func execute(ctx context.Context, opts options) error {
 			return fmt.Errorf("can't activate web server, %w", srvErr)
 		}
 	}
-	runtimeProbe.SetReady(true)
+	tgListener.OnReady = func() {
+		runtimeProbe.SetReady(true)
+	}
 
 	// run telegram listener and event processor loop
 	if err := tgListener.Do(ctx); err != nil { //nolint:staticcheck // do() runs infinite loop, always returns error on exit

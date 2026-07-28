@@ -36,6 +36,8 @@ type IncomingEvent struct {
 	Source          string
 	UpdateID        int
 	ChatID          int64
+	MessageThreadID int
+	MediaGroupID    string
 	MessageID       int
 	EditedMessageID int
 	IdempotencyKey  string

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/redstone-md/shield/app/rules"
 	"github.com/redstone-md/shield/app/storage"
 )
 
 type OnboardingService struct {
+	mu         sync.Mutex
 	tenants    TenantStore
 	workspaces WorkspaceStore
 	ruleSets   RuleSetBootstrapper
@@ -49,6 +51,9 @@ func NewOnboardingService(
 }
 
 func (s *OnboardingService) Onboard(ctx context.Context, req OnboardRequest) (*OnboardResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if req.TenantID == "" || req.Name == "" || req.OwnerID == "" {
 		return nil, fmt.Errorf("tenant_id, name and owner_id are required")
 	}

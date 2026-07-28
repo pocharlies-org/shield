@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-pkgz/rest"
 	"github.com/sashabaranov/go-openai"
 	"google.golang.org/genai"
 
@@ -108,15 +107,9 @@ func activateServer(
 ) (err error) {
 	authPassswd := opts.Server.AuthPasswd
 	if opts.Server.AuthPasswd == "auto" {
-		authPassswd, err = webapi.GenerateRandomPassword(20)
-		if err != nil {
-			return fmt.Errorf("can't generate random password, %w", err)
-		}
-		authHash, err := rest.GenerateBcryptHash(authPassswd)
-		if err != nil {
-			return fmt.Errorf("can't generate bcrypt hash for password, %w", err)
-		}
-		log.Printf("[WARN] generated basic auth password for user tg-spam: %q, bcrypt hash: %s", authPassswd, authHash)
+		return fmt.Errorf(
+			"SERVER_AUTH=auto is disabled because it exposes credentials in logs; configure SERVER_AUTH or SERVER_AUTH_HASH",
+		)
 	}
 
 	// make store and load approved users

@@ -1,11 +1,11 @@
 package tgspam
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strconv"
+	"io"
 	"strings"
 
 	"github.com/redstone-md/shield/lib/spamcheck"
@@ -23,13 +23,6 @@ type llmContext struct {
 }
 
 const maxLLMProviderRetries = 20
-
-var (
-	trailingCommaRegex = regexp.MustCompile(`,\s*([}\]])`)
-	spamFieldRegex     = regexp.MustCompile(`(?is)"?spam"?\s*:\s*("?(?:true|false|1|0)"?)`)
-	reasonFieldRegex   = regexp.MustCompile(`(?is)"?reason"?\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')`)
-	confFieldRegex     = regexp.MustCompile(`(?is)"?confidence"?\s*:\s*"?(\d{1,3})"?`)
-)
 
 type llmCheckParams struct {
 	Name        string
@@ -105,130 +98,37 @@ func llmHistoryMessage(req spamcheck.Request) string {
 }
 
 func parseLLMResponse(content string) (llmResponse, error) {
-	clean := strings.TrimSpace(stripThoughtTags(content))
+	clean := strings.TrimSpace(content)
 	if clean == "" {
 		return llmResponse{}, fmt.Errorf("empty response")
 	}
 
-	candidates := []string{clean}
-	if extracted := extractFirstJSONObject(clean); extracted != "" && extracted != clean {
-		candidates = append(candidates, extracted)
+	var wire struct {
+		IsSpam     *bool   `json:"spam"`
+		Reason     *string `json:"reason"`
+		Confidence *int    `json:"confidence"`
 	}
-
-	for _, candidate := range candidates {
-		if resp, err := unmarshalLLMResponse(candidate); err == nil {
-			return resp, nil
-		}
-		if sanitized := sanitizeBrokenJSON(candidate); sanitized != candidate {
-			if resp, err := unmarshalLLMResponse(sanitized); err == nil {
-				return resp, nil
-			}
-		}
+	decoder := json.NewDecoder(bytes.NewBufferString(clean))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wire); err != nil {
+		return llmResponse{}, fmt.Errorf("decode strict LLM response: %w", err)
 	}
-
-	for _, candidate := range candidates {
-		if resp, ok := parseLLMResponseFallback(candidate); ok {
-			return resp, nil
-		}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return llmResponse{}, fmt.Errorf("response must contain exactly one JSON object")
 	}
-
-	return llmResponse{}, fmt.Errorf("can't unmarshal response: %s", clean)
-}
-
-func unmarshalLLMResponse(content string) (llmResponse, error) {
-	var response llmResponse
-	if err := json.Unmarshal([]byte(content), &response); err != nil {
-		return llmResponse{}, fmt.Errorf("can't unmarshal response: %s - %w", content, err)
+	if wire.IsSpam == nil || wire.Reason == nil || wire.Confidence == nil {
+		return llmResponse{}, fmt.Errorf("spam, reason, and confidence are required")
 	}
-	return response, nil
-}
-
-func sanitizeBrokenJSON(content string) string {
-	return trailingCommaRegex.ReplaceAllString(content, "$1")
-}
-
-func extractFirstJSONObject(content string) string {
-	start := strings.IndexByte(content, '{')
-	if start < 0 {
-		return ""
+	reason := strings.TrimSpace(*wire.Reason)
+	if reason == "" {
+		return llmResponse{}, fmt.Errorf("reason is required")
 	}
-
-	depth := 0
-	inString := false
-	escaped := false
-	for i := start; i < len(content); i++ {
-		ch := content[i]
-		if inString {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if ch == '\\' {
-				escaped = true
-				continue
-			}
-			if ch == '"' {
-				inString = false
-			}
-			continue
-		}
-		switch ch {
-		case '"':
-			inString = true
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return content[start : i+1]
-			}
-		}
+	if *wire.Confidence < 1 || *wire.Confidence > 100 {
+		return llmResponse{}, fmt.Errorf("confidence must be between 1 and 100")
 	}
-	return ""
-}
-
-func parseLLMResponseFallback(content string) (llmResponse, bool) {
-	spamMatch := spamFieldRegex.FindStringSubmatch(content)
-	reasonMatch := reasonFieldRegex.FindStringSubmatch(content)
-	confMatch := confFieldRegex.FindStringSubmatch(content)
-	if len(spamMatch) < 2 || len(reasonMatch) < 2 || len(confMatch) < 2 {
-		return llmResponse{}, false
+	if *wire.IsSpam && *wire.Confidence <= 80 {
+		return llmResponse{}, fmt.Errorf("spam decision requires confidence above 80")
 	}
-
-	isSpam, ok := parseFallbackBool(spamMatch[1])
-	if !ok {
-		return llmResponse{}, false
-	}
-
-	reason, err := strconv.Unquote(normalizeQuotedString(reasonMatch[1]))
-	if err != nil {
-		return llmResponse{}, false
-	}
-
-	confidence, err := strconv.Atoi(confMatch[1])
-	if err != nil {
-		return llmResponse{}, false
-	}
-
-	return llmResponse{IsSpam: isSpam, Reason: reason, Confidence: confidence}, true
-}
-
-func parseFallbackBool(raw string) (value, ok bool) {
-	val := strings.Trim(strings.ToLower(raw), `" `)
-	switch val {
-	case "true", "1":
-		return true, true
-	case "false", "0":
-		return false, true
-	default:
-		return false, false
-	}
-}
-
-func normalizeQuotedString(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
-		return `"` + strings.ReplaceAll(raw[1:len(raw)-1], `"`, `\"`) + `"`
-	}
-	return raw
+	return llmResponse{IsSpam: *wire.IsSpam, Reason: reason, Confidence: *wire.Confidence}, nil
 }

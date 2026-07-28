@@ -11,6 +11,7 @@ import (
 
 	"github.com/redstone-md/shield/app/audit"
 	"github.com/redstone-md/shield/app/bot"
+	"github.com/redstone-md/shield/app/community"
 	"github.com/redstone-md/shield/app/controlplane"
 	"github.com/redstone-md/shield/app/events"
 	"github.com/redstone-md/shield/app/feedback"
@@ -34,6 +35,8 @@ type runtimeAssembly struct {
 	ActiveRuleSet          rules.RuleSet
 	IncomingEventsStore    *storage.IncomingEvents
 	ModerationActionsStore *storage.ModerationActions
+	CommunityStore         *community.Store
+	CommunityModerator     events.CommunityModerator
 	ReportsStore           *storage.Reports
 	DetectedSpamStore      *storage.DetectedSpam
 	WorkspacesStore        *storage.Workspaces
@@ -165,6 +168,28 @@ func assembleRuntime(ctx context.Context, opts options) (*runtimeAssembly, error
 		return nil, fmt.Errorf("can't make moderation actions store, %w", err)
 	}
 
+	var communityStore *community.Store
+	var communityModerator events.CommunityModerator
+	if opts.Community.Enabled {
+		communityStore, err = community.NewStore(ctx, dataDB)
+		if err != nil {
+			return nil, fmt.Errorf("can't make community rule store, %w", err)
+		}
+		communityModerator, err = community.NewEngine(communityStore, community.Config{
+			Enabled:                 true,
+			ChatID:                  opts.Community.ChatID,
+			PresentationThreadID:    opts.Community.PresentationThreadID,
+			ContestThreadID:         opts.Community.ContestThreadID,
+			ContestID:               opts.Community.ContestID,
+			Shadow:                  !opts.Community.ApplyActions,
+			RequirePresentationText: !opts.Community.AllowEmptyPresentationText,
+			PrivateConsentTerms:     opts.Community.PrivateConsentTerms,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("can't configure community rules, %w", err)
+		}
+	}
+
 	reportsStore, err := storage.NewReports(ctx, dataDB)
 	if err != nil {
 		return nil, fmt.Errorf("can't make reports store, %w", err)
@@ -263,6 +288,8 @@ func assembleRuntime(ctx context.Context, opts options) (*runtimeAssembly, error
 		ActiveRuleSet:          activeRuleSet,
 		IncomingEventsStore:    incomingEventsStore,
 		ModerationActionsStore: moderationActionsStore,
+		CommunityStore:         communityStore,
+		CommunityModerator:     communityModerator,
 		ReportsStore:           reportsStore,
 		DetectedSpamStore:      detectedSpamStore,
 		WorkspacesStore:        workspacesStore,
@@ -477,6 +504,7 @@ func (a *runtimeAssembly) makeTelegramListener(opts options, tbAPI *tbapi.BotAPI
 		IncomingEvents:      a.IncomingEventsStore,
 		ModerationActions:   a.ModerationActionsStore,
 		DetectedSpamCounter: a.DetectedSpamStore,
+		CommunityModerator:  a.CommunityModerator,
 		RuleSetVersion:      a.ActiveRuleSet.Version,
 		ModerationConfig: events.ModerationConfig{
 			FirstStrike:        a.ActiveRuleSet.Moderation.FirstStrike,

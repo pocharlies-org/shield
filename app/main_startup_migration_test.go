@@ -25,7 +25,7 @@ func Test_activateServerOnly(t *testing.T) {
 	opts.Server.Enabled = true
 	opts.Server.ListenAddr = ":9988"
 	opts.Server.ProbeListenAddr = ":9989"
-	opts.Server.AuthPasswd = "auto"
+	opts.Server.AuthPasswd = "test-password"
 	opts.InstanceID = "gr1"
 	opts.DataBaseURL = fmt.Sprintf("sqlite://%s", path.Join(t.TempDir(), "tg-spam.db"))
 

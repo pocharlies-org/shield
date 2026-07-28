@@ -350,7 +350,7 @@ func TestAdmin_DirectCommands(t *testing.T) {
 		require.Len(t, mockAPI.SendCalls(), 1)
 		warnMsg := mockAPI.SendCalls()[0].C.(tbapi.MessageConfig)
 		assert.Equal(t, int64(123), warnMsg.ChatID)
-		assert.Contains(t, warnMsg.Text, "Предупреждение 1/3")
+		assert.Contains(t, warnMsg.Text, "Aviso 1/3")
 		assert.Contains(t, warnMsg.Text, "Не нарушайте правила чата")
 	})
 
@@ -376,7 +376,7 @@ func TestAdmin_DirectCommands(t *testing.T) {
 		assert.Equal(t, int64(222), actionSpy.warnCalls[0].subjectID)
 		assert.Equal(t, 999, actionSpy.warnCalls[0].messageID)
 		assert.Equal(t, time.Minute, actionSpy.warnCalls[0].warnDelTime)
-		assert.Contains(t, actionSpy.warnCalls[0].text, "Предупреждение 1/3")
+		assert.Contains(t, actionSpy.warnCalls[0].text, "Aviso 1/3")
 		assert.Contains(t, actionSpy.warnCalls[0].text, "Не нарушайте правила чата.")
 		require.Len(t, detectedSpy.writes, 1)
 		assert.Equal(t, int64(222), detectedSpy.writes[0].UserID)
@@ -556,7 +556,7 @@ func TestAdmin_DirectCommands(t *testing.T) {
 		assert.Equal(t, int64(123), warnMsg.ChatID)
 		assert.Contains(t, warnMsg.Text, "spam\\_channel")
 		assert.NotContains(t, warnMsg.Text, "@Channel\\_Bot")
-		assert.Contains(t, warnMsg.Text, "Предупреждение 1/3")
+		assert.Contains(t, warnMsg.Text, "Aviso 1/3")
 		assert.Contains(t, warnMsg.Text, "Не нарушайте правила чата")
 	})
 
@@ -588,7 +588,7 @@ func TestAdmin_DirectCommands(t *testing.T) {
 		assert.Contains(t, warnMsg.Text, "Spam Channel")
 		assert.NotContains(t, warnMsg.Text, "@Spam Channel")
 		assert.NotContains(t, warnMsg.Text, "@Channel")
-		assert.Contains(t, warnMsg.Text, "Предупреждение 1/3")
+		assert.Contains(t, warnMsg.Text, "Aviso 1/3")
 		assert.Contains(t, warnMsg.Text, "Не нарушайте правила чата")
 	})
 
@@ -642,10 +642,11 @@ func TestAdmin_WarningNotSpamCallback(t *testing.T) {
 		mockAPI := &mocks.TbAPIMock{
 			SendFunc: func(c tbapi.Chattable) (tbapi.Message, error) { return tbapi.Message{}, nil },
 		}
-		adm := admin{tbAPI: mockAPI, adminChatID: 456}
+		adm := admin{tbAPI: mockAPI, adminChatID: 456, superUsers: SuperUsers{"admin"}}
 
 		query := &tbapi.CallbackQuery{
 			Data: "W?7187750383:777",
+			From: &tbapi.User{ID: 111, UserName: "admin"},
 			Message: &tbapi.Message{
 				MessageID: 100,
 				Chat:      tbapi.Chat{ID: 456},
@@ -675,7 +676,10 @@ func TestAdmin_WarningNotSpamCallback(t *testing.T) {
 		botMock := &mocks.BotMock{UpdateHamFunc: func(msg string) error { return nil }}
 		autoLearner := &autoLearnerSpy{}
 		detectedSpy := &detectedSpamCounterSpy{count: 2, deleteResult: true}
-		adm := admin{tbAPI: mockAPI, bot: botMock, adminChatID: 456, autoLearner: autoLearner, detectedSpam: detectedSpy}
+		adm := admin{
+			tbAPI: mockAPI, bot: botMock, adminChatID: 456, autoLearner: autoLearner,
+			detectedSpam: detectedSpy, superUsers: SuperUsers{"111"},
+		}
 
 		query := &tbapi.CallbackQuery{
 			ID:   "callback-id",
@@ -689,7 +693,7 @@ func TestAdmin_WarningNotSpamCallback(t *testing.T) {
 
 Проводим инвайтинг в чаты, рассылку по группам
 
-Причина: classifier`,
+Motivo: classifier`,
 			},
 		}
 
@@ -715,10 +719,11 @@ func TestAdmin_WarningNotSpamCallback(t *testing.T) {
 		mockAPI := &mocks.TbAPIMock{
 			SendFunc: func(c tbapi.Chattable) (tbapi.Message, error) { return tbapi.Message{}, nil },
 		}
-		adm := admin{tbAPI: mockAPI, adminChatID: 456}
+		adm := admin{tbAPI: mockAPI, adminChatID: 456, superUsers: SuperUsers{"admin"}}
 
 		query := &tbapi.CallbackQuery{
 			Data: "WX7187750383:777",
+			From: &tbapi.User{ID: 111, UserName: "admin"},
 			Message: &tbapi.Message{
 				MessageID: 100,
 				Chat:      tbapi.Chat{ID: 456},

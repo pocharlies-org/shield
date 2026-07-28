@@ -1,5 +1,7 @@
 package slowpath
 
+const slowPathSpamThreshold = 80
+
 type EscalationCheck struct {
 	HasImages      bool
 	AmbiguousScore bool
@@ -34,6 +36,7 @@ func MergeResults(fast DetectionResult, slow *SlowPathResult) DetectionResult {
 
 	merged := DetectionResult{
 		Spam:    fast.Spam,
+		Score:   fast.Score,
 		Signals: make([]DetectionSignal, len(fast.Signals)),
 	}
 	copy(merged.Signals, fast.Signals)
@@ -48,6 +51,9 @@ func MergeResults(fast DetectionResult, slow *SlowPathResult) DetectionResult {
 	}
 
 	if slow.Final && len(slow.Signals) > 0 {
+		if slow.Spam && slow.Confidence <= slowPathSpamThreshold {
+			return merged
+		}
 		merged.Spam = slow.Spam
 		if slow.Spam {
 			merged.Score = max(fast.Score, float64(slow.Confidence)/100.0)

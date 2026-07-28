@@ -70,11 +70,17 @@ The bot is configured through command-line flags or environment variables. Out o
 | `LLM_CONSENSUS` | `--llm.consensus` | `any` or `all` when multiple LLMs are eligible |
 | `LLM_MIN_INPUT_CHARS` | `--llm.min-input-chars` | Minimum text length for automatic LLM checks; default `5` |
 | `REPORT_ENABLED` | `--report.enabled` | Enable user `/report` flow |
+| `COMMUNITY_ENABLED` | `--community.enabled` | Enable deterministic presentation and contest topic rules |
+| `COMMUNITY_CONTEST_ID` | `--community.contest-id` | Active contest identifier; rotate it for every contest |
+| `COMMUNITY_APPLY_ACTIONS` | `--community.apply-actions` | Apply topic-rule actions; omitted/false is shadow mode |
 | `SERVER_ENABLED` | `--server.enabled` | Enable HTTP server/API/UI |
 | `SERVER_LISTEN` | `--server.listen` | HTTP listen address, default `:8080` |
 | `LUA_PLUGINS_ENABLED` | `--lua-plugins.enabled` | Enable Lua plugin checks |
 
 Run the binary with `--help` to see the full generated option list.
+
+When enabling the web server, set `SERVER_AUTH` or `SERVER_AUTH_HASH` explicitly. The legacy
+`SERVER_AUTH=auto` mode is rejected because it printed a generated credential into process logs.
 
 ## Moderation pipeline
 
@@ -104,7 +110,7 @@ Checks messages against a curated stop-word list stored in the database. Support
 
 ### Combot Anti-Spam System (CAS)
 
-Enabled by default. Cross-references users with the external CAS database. Disable with `--cas.api=""`. Custom User-Agent: `--cas.user-agent`.
+Disabled by default to keep moderation local. Setting `--cas.api` opts in to sending Telegram user IDs to that external service.
 
 ### OpenAI integration
 
@@ -119,6 +125,36 @@ Setting `--openai.token` enables OpenAI for both text and vision analysis.
 - `--openai.custom-prompt` adds custom spam patterns (repeatable).
 - `--openai.reasoning-effort` controls thinking mode for supported models (`none`, `low`, `medium`, `high`; default `none`).
 - `--openai.model` changes the model (default `gpt-4o-mini`).
+
+The OpenAI-compatible path also supports a local LiteLLM endpoint. Sauvage uses model alias
+`ornith-1.0`; see [`.env.sauvage.example`](.env.sauvage.example). Model output is accepted only
+as one strict JSON object. Missing fields, unknown fields, wrappers, invalid confidence values,
+and `spam:true` at confidence 80 or below are rejected without creating a moderation signal.
+
+### Sauvage forum rules
+
+When `COMMUNITY_ENABLED=true`, Shield applies SQL-backed rules before the LLM:
+
+- topic `3` (Presentaciones): one presentation per Telegram user for the lifetime of the group;
+- topic `6` (Concurso): one photo entry or one photo album per user and `COMMUNITY_CONTEST_ID`;
+- every item with the same Telegram `media_group_id` belongs to the same allowed album;
+- replies, text-only entries, and videos in those structured topics are removed when actions are enabled;
+- repeat violations escalate from warning to 1-hour restriction, 24-hour restriction, then ban;
+- administrators and channel announcements bypass these quotas;
+- managed-topic decisions store IDs, rule, action, reason, and timestamp, but not message text.
+
+`COMMUNITY_APPLY_ACTIONS=false` is topic-rule shadow mode: decisions are stored and logged without
+deleting, warning, restricting, or banning, and shadow observations do not preload live strikes.
+Set `DRY=true` to shadow Ornith and all Telegram actions as well. Use a new
+`COMMUNITY_CONTEST_ID` at the start of every contest.
+Allowed and shadow-mode messages from every topic continue through Ornith. The built-in policy
+allows consensual adult conversation and non-targeted profanity, while flagging targeted abuse,
+coercion, exposure of another person's private life, doxxing, scams, and unwanted advertising.
+
+The bot must run as one Telegram polling replica and needs only `delete_messages` and
+`restrict_members`/`ban_users`. Keep the admin chat private and list administrators by numeric ID.
+The detailed rollout and recovery procedure is in
+[`docs/sauvage-moderation.md`](docs/sauvage-moderation.md).
 
 **Vision checks (automatic):**
 - When OpenAI is configured and a message contains an image not already flagged by the fast path, the image is downloaded from Telegram and sent to OpenAI's vision API for analysis.
@@ -151,8 +187,8 @@ The custom system prompt must preserve the response contract expected by Shield:
 - Return only valid JSON, with no Markdown fences or explanatory text outside JSON.
 - Use exactly these fields: `spam` as boolean, `reason` as short string, and `confidence` as integer from 1 to 100.
 - Keep the same decision meaning: mark spam only when confidence is above 80.
-- Write `reason` in the language your moderators expect; the built-in prompt uses Russian.
-- Include your local spam priorities, such as crypto exchange ads, illegal work, repeated ads, fraud, abuse, drugs, suspicious links, QR-code scams, and emoji spam.
+- Write `reason` in the language your moderators expect; the Sauvage built-in prompt uses Spanish.
+- Include the local conduct priorities while keeping consensual adult conversation explicitly allowed.
 - Do not ask the model to reveal hidden reasoning; keep the reason concise and operator-readable.
 
 Minimal example:
@@ -160,8 +196,8 @@ Minimal example:
 ```md
 Return only JSON: {"spam":true/false,"reason":"why","confidence":1-100}.
 Spam only if confidence > 80.
-This is a Russian-speaking Telegram chat, write reason in Russian.
-Prioritize crypto exchange ads, illegal work, repeated ads, fraud, suspicious links, drugs, abuse, and emoji spam.
+This is a Spanish-speaking adult community; write reason in Spanish.
+Allow consensual adult conversation. Flag targeted abuse, coercion, doxxing, scams, and unwanted advertising.
 ```
 
 ### Emoji count

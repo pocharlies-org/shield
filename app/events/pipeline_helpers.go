@@ -40,6 +40,8 @@ func (l *TelegramListener) makeIncomingEvent(update tbapi.Update, msg *bot.Messa
 		Source:          "telegram.update",
 		UpdateID:        update.UpdateID,
 		ChatID:          msg.ChatID,
+		MessageThreadID: msg.MessageThreadID,
+		MediaGroupID:    msg.MediaGroupID,
 		MessageID:       msg.ID,
 		EditedMessageID: editedMessageID,
 		IdempotencyKey:  telegramIdempotencyKey(update.UpdateID, msg.ChatID, msg.ID, editedMessageID),
@@ -74,16 +76,19 @@ func (l *TelegramListener) currentCorrelationID() string {
 
 func incomingEventAttributes(msg *bot.Message) map[string]string {
 	attrs := map[string]string{
-		"with_forward":    strconv.FormatBool(msg.WithForward),
-		"with_keyboard":   strconv.FormatBool(msg.WithKeyboard),
-		"with_contact":    strconv.FormatBool(msg.WithContact),
-		"with_giveaway":   strconv.FormatBool(msg.WithGiveaway),
-		"with_video":      strconv.FormatBool(msg.WithVideo),
-		"with_video_note": strconv.FormatBool(msg.WithVideoNote),
-		"with_audio":      strconv.FormatBool(msg.WithAudio),
-		"with_sticker":    strconv.FormatBool(msg.WithSticker),
-		"with_animation":  strconv.FormatBool(msg.Animation != nil),
-		"custom_emoji_id": msg.CustomEmojiID,
+		"with_forward":      strconv.FormatBool(msg.WithForward),
+		"with_keyboard":     strconv.FormatBool(msg.WithKeyboard),
+		"with_contact":      strconv.FormatBool(msg.WithContact),
+		"with_giveaway":     strconv.FormatBool(msg.WithGiveaway),
+		"with_video":        strconv.FormatBool(msg.WithVideo),
+		"with_video_note":   strconv.FormatBool(msg.WithVideoNote),
+		"with_audio":        strconv.FormatBool(msg.WithAudio),
+		"with_sticker":      strconv.FormatBool(msg.WithSticker),
+		"with_animation":    strconv.FormatBool(msg.Animation != nil),
+		"custom_emoji_id":   msg.CustomEmojiID,
+		"message_thread_id": strconv.Itoa(msg.MessageThreadID),
+		"is_topic_message":  strconv.FormatBool(msg.IsTopicMessage),
+		"media_group_id":    msg.MediaGroupID,
 	}
 	if msg.SenderChat.ID != 0 {
 		attrs["sender_chat_id"] = strconv.FormatInt(msg.SenderChat.ID, 10)
@@ -233,14 +238,11 @@ func applyMediaSlowPath(ctx context.Context, cfg mediaSlowPathConfig, event mode
 }
 
 func logMediaSlowPathPayload(ctx context.Context, mime string, data []byte) {
-	headLen := min(len(data), 64)
-	encoded := base64.StdEncoding.EncodeToString(data)
 	prefix := "data:" + mime + ";base64,"
-	previewLen := min(len(encoded), 128)
 	sum := sha256.Sum256(data)
 	observability.Logf(ctx,
-		"[DEBUG] slowpath image payload: mime=%s image_bytes=%d image_sha256=%x image_head_hex=%x data_url_len=%d data_url_prefix=%q",
-		mime, len(data), sum, data[:headLen], len(prefix)+len(encoded), prefix+encoded[:previewLen],
+		"[DEBUG] slowpath image payload: mime=%s image_bytes=%d image_sha256=%x data_url_len=%d",
+		mime, len(data), sum, len(prefix)+base64.StdEncoding.EncodedLen(len(data)),
 	)
 }
 
@@ -436,7 +438,7 @@ func appendReasonHTML(text, reason string) string {
 	if reason == "" {
 		return text
 	}
-	return fmt.Sprintf("%s\nПричина: %s", text, htmlEscape(reason))
+	return fmt.Sprintf("%s\nMotivo: %s", text, htmlEscape(reason))
 }
 
 func firstNotificationReason(reasons []string) string {
@@ -449,12 +451,12 @@ func firstNotificationReason(reasons []string) string {
 func buildWarningText(warnNum, warnTotal int, user bot.User, userID int64, customMsg, reason string) string {
 	userMention := warningUserMention(user, userID)
 	if customMsg != "" {
-		text := fmt.Sprintf("\u26a0\ufe0f Предупреждение %d/%d\n%s, %s", warnNum, warnTotal, userMention, htmlEscape(customMsg))
+		text := fmt.Sprintf("\u26a0\ufe0f Aviso %d/%d\n%s, %s", warnNum, warnTotal, userMention, htmlEscape(customMsg))
 		return appendReasonHTML(text, reason)
 	}
 
-	warnText := fmt.Sprintf("\u26a0\ufe0f Предупреждение %d/%d\n%s, вы нарушили правила чата. "+
-		"При получении %d предупреждений последует мьют на 30 мин, затем на 6 ч, и далее — перманентный бан.",
+	warnText := fmt.Sprintf("\u26a0\ufe0f Aviso %d/%d\n%s, has incumplido las normas del grupo. "+
+		"Al llegar a %d avisos se aplicará una restricción de 30 minutos, después de 6 horas y, si continúa, la expulsión.",
 		warnNum, warnTotal, userMention, warnTotal)
 	return appendReasonHTML(warnText, reason)
 }

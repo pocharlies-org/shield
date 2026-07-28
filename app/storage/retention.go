@@ -92,11 +92,11 @@ func (s *RetentionService) buildCleaners() []cleanSpec {
 	add("labels", "created_at", s.config.LabelsTTL)
 	add("candidates", "created_at", s.config.CandidatesTTL)
 	add("knowledge_snapshots", "created_at", s.config.LabelsTTL)
-	add("incoming_events", "timestamp", s.config.IncomingEventsTTL)
-	add("moderation_actions", "timestamp", s.config.ModerationActionsTTL)
-	add("messages", "timestamp", s.config.IncomingEventsTTL)
-	add("spam", "timestamp", s.config.IncomingEventsTTL)
-	add("reports", "timestamp", s.config.IncomingEventsTTL)
+	add("incoming_events", "received_at", s.config.IncomingEventsTTL)
+	add("moderation_actions", "created_at", s.config.ModerationActionsTTL)
+	add("messages", "time", s.config.IncomingEventsTTL)
+	add("spam", "time", s.config.IncomingEventsTTL)
+	add("reports", "report_time", s.config.IncomingEventsTTL)
 	add("usage_counters", "window_start", s.config.UsageCountersTTL)
 	return cleaners
 }
@@ -124,8 +124,11 @@ func (s *RetentionService) cleanTable(ctx context.Context, table, column string,
 	query := s.db.Adopt(fmt.Sprintf("DELETE FROM %s WHERE %s < ?", table, column))
 	result, err := s.db.ExecContext(ctx, query, cutoff)
 	if err != nil {
-		return 0, nil
+		return 0, fmt.Errorf("delete expired rows: %w", err)
 	}
-	affected, _ := result.RowsAffected()
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("inspect deleted rows: %w", err)
+	}
 	return int(affected), nil
 }

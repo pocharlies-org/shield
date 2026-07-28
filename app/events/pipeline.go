@@ -2,7 +2,6 @@ package events
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -220,17 +219,12 @@ type pipelineContext struct {
 func (l *TelegramListener) processQueuedEvent(ctx context.Context, event moderation.IncomingEvent, update tbapi.Update) error {
 	ctx = observability.WithModerationMetadata(ctx, event.EventID, event.CorrelationID, event.IdempotencyKey)
 
-	msgJSON, errJSON := json.Marshal(update.Message)
-	if errJSON != nil {
-		return fmt.Errorf("failed to marshal update.Message to json: %w", errJSON)
-	}
-
 	fromChat := update.Message.Chat.ID
-	observability.Logf(ctx, "[DEBUG] %s", string(msgJSON))
 	msg := transform(update.Message)
 
-	observability.Logf(ctx, "[DEBUG] incoming msg: %+v", strings.ReplaceAll(msg.Text, "\n", " "))
-	observability.Logf(ctx, "[DEBUG] incoming msg details: %+v", msg)
+	observability.Logf(ctx, "[DEBUG] incoming message metadata: chat=%d thread=%d message=%d user=%d media=%t chars=%d",
+		msg.ChatID, msg.MessageThreadID, msg.ID, msg.From.ID,
+		msg.Image != nil || msg.WithVideo || msg.WithSticker || msg.Animation != nil, len(msg.Text))
 
 	l.locateMessage(ctx, msg, fromChat)
 
@@ -241,6 +235,7 @@ func (l *TelegramListener) processQueuedEvent(ctx context.Context, event moderat
 
 	checkStart := time.Now()
 	resp := l.botOnMessage(ctx, *msg, false)
+	resp.MessageThreadID = msg.MessageThreadID
 	l.observeLatency("fast_path_latency", time.Since(checkStart))
 	l.meter(ctx, "spam_checks")
 	if resp.Send && resp.BanInterval > 0 {
@@ -432,6 +427,7 @@ func (l *TelegramListener) processWarn(ctx context.Context, pc pipelineContext) 
 
 	warnReq := warnRequest{
 		chatID:      pc.fromChat,
+		threadID:    pc.msg.MessageThreadID,
 		subjectID:   pc.spamUserID,
 		messageID:   pc.msg.ID,
 		text:        warnText,
@@ -476,8 +472,8 @@ func (l *TelegramListener) processWarn(ctx context.Context, pc pipelineContext) 
 }
 
 const (
-	banGroupMessageText      = "🚫 Пользователь забанен за спам"
-	restrictGroupMessageText = "🔇 Пользователь ограничен за спам"
+	banGroupMessageText      = "🚫 La cuenta ha sido expulsada por incumplir las normas"
+	restrictGroupMessageText = "🔇 La cuenta ha sido restringida por incumplir las normas"
 )
 
 // postBanGroupMessage posts the self-deleting ban or restriction notice with
@@ -493,6 +489,7 @@ func (l *TelegramListener) postBanGroupMessage(ctx context.Context, pc pipelineC
 	}
 	if err := l.ActionExecutor.PostBanMessage(ctx, banMessageRequest{
 		chatID:      pc.fromChat,
+		threadID:    pc.msg.MessageThreadID,
 		text:        text,
 		incidentID:  incidentID,
 		botUsername: l.BotUsername,
