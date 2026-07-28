@@ -26,6 +26,9 @@ func (a *AdminAuditLogger) Middleware(next http.Handler) http.Handler {
 		duration := time.Since(start)
 
 		userID, _, _ := r.BasicAuth()
+		if email := strings.TrimSpace(r.Header.Get("X-Auth-Request-Email")); email != "" {
+			userID = email
+		}
 		tenantID := r.Header.Get("X-Tenant-ID")
 
 		var sb strings.Builder

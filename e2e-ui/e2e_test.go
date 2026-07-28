@@ -64,6 +64,12 @@ func TestMain(m *testing.M) {
 		"--db="+testDBPath,
 		"--files.samples="+testDataPath,
 		"--files.dynamic="+testDataPath,
+		"--community.enabled",
+		"--community.chat-id=-1003672565710",
+		"--community.presentation-thread-id=3",
+		"--community.contest-thread-id=6",
+		"--community.contest-id=e2e",
+		"--dry",
 		"--dbg",
 	)
 	serverCmd.Stdout = os.Stdout
@@ -263,6 +269,46 @@ func TestFeedback_PageLoads(t *testing.T) {
 	waitVisible(t, page.Locator("button.tab:has-text('Labels')"))
 	waitVisible(t, page.Locator("button.tab:has-text('Candidates')"))
 	waitVisible(t, page.Locator("button.tab:has-text('Knowledge')"))
+}
+
+func TestSauvageOperationsPagesLoad(t *testing.T) {
+	page := newPage(t)
+	pages := []struct {
+		path  string
+		title string
+		text  string
+	}{
+		{"/sauvage", "Sauvage", "Resumen de moderación"},
+		{"/sauvage/activity", "Actividad Sauvage", "Actividad de moderación"},
+		{"/sauvage/presentations", "Presentaciones", "Presentaciones registradas"},
+		{"/sauvage/contests", "Concursos", "Participaciones en concursos"},
+		{"/sauvage/users", "Reincidencias", "Reincidencias activas"},
+		{"/sauvage/system", "Sistema", "Estado del sistema"},
+	}
+	for _, tt := range pages {
+		t.Run(tt.path, func(t *testing.T) {
+			resp, err := page.Goto(baseURL + tt.path)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.Status())
+			title, err := page.Title()
+			require.NoError(t, err)
+			assert.Contains(t, title, tt.title)
+			waitVisible(t, page.Locator(fmt.Sprintf("h1:has-text('%s'), h2:has-text('%s')", tt.text, tt.text)))
+		})
+	}
+}
+
+func TestSauvageSummaryDoesNotExposePrivateSettings(t *testing.T) {
+	page := newPage(t)
+	resp, err := page.Goto(baseURL + "/api/sauvage/summary")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Status())
+	body, err := page.Locator("body").TextContent()
+	require.NoError(t, err)
+	assert.Contains(t, body, `"model":"gpt-4o-mini"`)
+	assert.NotContains(t, body, "openai_custom_prompts")
+	assert.NotContains(t, body, "super_users")
+	assert.NotContains(t, body, "admin_group")
 }
 
 // --- navigation tests ---

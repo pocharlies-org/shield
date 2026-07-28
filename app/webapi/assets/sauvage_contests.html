@@ -1,0 +1,8 @@
+<!DOCTYPE html><html lang="es"><head><title>Concursos - Sauvage</title>{{template "heads.html"}}</head>
+<body x-data="{ navOpen:false }">{{template "sidebar.html"}}<main class="main">
+<header class="topbar"><button class="topbar__burger" @click="navOpen=!navOpen"><i class="bi bi-list"></i></button><h2 class="page-title">Participaciones en concursos</h2></header>
+<div class="content"><div class="alert alert-info">Concurso activo configurado: <code>{{.Settings.ContestID}}</code>. Un álbum completo cuenta como una participación.</div>
+<form class="filter-bar" method="get"><div class="field"><label>ID de concurso</label><input class="input" name="contest" value="{{.ContestID}}" placeholder="{{.Settings.ContestID}}"></div><button class="btn btn-accent">Filtrar</button></form>
+<div class="table-wrap"><table class="table"><thead><tr><th>Concurso</th><th>Usuario</th><th>Primer mensaje</th><th>Entrada</th><th>Fecha</th></tr></thead>
+<tbody>{{range .Records}}<tr><td><code>{{.ContestID}}</code></td><td><a href="/sauvage/activity?user={{.UserID}}">{{.UserID}}</a></td><td>{{.FirstMessageID}}</td><td><code>{{.EntryKey}}</code></td><td>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td></tr>
+{{else}}<tr><td colspan="5" class="center-text muted">No hay participaciones</td></tr>{{end}}</tbody></table></div></div></main></body></html>

@@ -83,6 +83,9 @@ type webRuntimeAssembly struct {
 	RestoreProvider      webapi.RestoreService
 	Metrics              *observability.Metrics
 	BotUsername          string
+	CommunityStore       *community.Store
+	ModerationActions    *storage.ModerationActions
+	IncidentDashboard    *storage.IncidentStorage
 }
 
 func assembleRuntime(ctx context.Context, opts options) (*runtimeAssembly, error) {
@@ -315,6 +318,7 @@ func assembleRuntime(ctx context.Context, opts options) (*runtimeAssembly, error
 			CandidatesTTL:        opts.Retention.CandidatesTTL,
 			IncomingEventsTTL:    opts.Retention.IncomingEventsTTL,
 			ModerationActionsTTL: opts.Retention.ModerationActionsTTL,
+			CommunityEventsTTL:   opts.Retention.CommunityEventsTTL,
 			UsageCountersTTL:     opts.Retention.UsageCountersTTL,
 			Interval:             opts.Retention.Interval,
 		}),
@@ -342,6 +346,9 @@ func assembleRuntime(ctx context.Context, opts options) (*runtimeAssembly, error
 			OnboardingProvider:   &onboardingAdapter{inner: onboardingSvc},
 			RestoreProvider:      &restoreProviderAdapter{svc: restoreSvc},
 			Metrics:              metrics,
+			CommunityStore:       communityStore,
+			ModerationActions:    moderationActionsStore,
+			IncidentDashboard:    incidentsStore,
 		},
 	}
 

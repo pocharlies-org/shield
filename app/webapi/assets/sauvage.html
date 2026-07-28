@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><title>Sauvage - Shield</title>{{template "heads.html"}}</head>
+<body x-data="{ navOpen: false }">
+{{template "sidebar.html"}}
+<div class="scrim" x-show="navOpen" @click="navOpen=false" x-cloak></div>
+<main class="main">
+<header class="topbar">
+    <button class="topbar__burger" @click="navOpen=!navOpen" aria-label="Abrir navegación"><i class="bi bi-list"></i></button>
+    <h2 class="page-title">Centro de operaciones de Sauvage</h2>
+    <span class="mode-pill {{if .Settings.DryModeEnabled}}mode-shadow{{else}}mode-live{{end}}">
+        {{if .Settings.DryModeEnabled}}DRY RUN{{else}}ACTIVO{{end}}
+    </span>
+</header>
+<div class="content content-wide">
+    <div class="flex between center wrap gap-3 mb-4">
+        <div>
+            <h1>Resumen de moderación</h1>
+            <p class="muted">Últimos {{.Days}} días · Telegram + Ornith + reglas de topics</p>
+        </div>
+        <div class="flex gap-2">
+            <a class="btn btn-ghost" href="/sauvage/export.csv?days=30"><i class="bi bi-filetype-csv"></i> Exportar 30 días</a>
+            <a class="btn btn-accent" href="/sauvage/activity"><i class="bi bi-list-check"></i> Ver actividad</a>
+        </div>
+    </div>
+
+    {{if .Settings.DryModeEnabled}}
+    <div class="alert alert-info"><strong>Modo observación activo.</strong> Ornith y las reglas evalúan y registran, pero no deben sancionar en Telegram.</div>
+    {{end}}
+
+    <div class="metric-grid">
+        <div class="metric-card"><span>Decisiones de topic</span><strong>{{.Snapshot.Summary.TotalEvents}}</strong><small>{{.Snapshot.Summary.Allowed}} permitidas</small></div>
+        <div class="metric-card"><span>Infracciones simuladas</span><strong>{{.Snapshot.Summary.ShadowViolations}}</strong><small>sin acción real</small></div>
+        <div class="metric-card"><span>Infracciones activas</span><strong>{{.Snapshot.Summary.LiveViolations}}</strong><small>reglas de comunidad</small></div>
+        <div class="metric-card"><span>Acciones Telegram</span><strong>{{.ActionSummary.Total}}</strong><small>{{.ActionSummary.Completed}} correctas · {{.ActionSummary.Failed}} fallidas</small></div>
+        <div class="metric-card"><span>Presentaciones</span><strong>{{.Snapshot.Summary.Presentations}}</strong><small>personas registradas</small></div>
+        <div class="metric-card"><span>Participaciones</span><strong>{{.Snapshot.Summary.ContestEntries}}</strong><small>todos los concursos</small></div>
+        <div class="metric-card"><span>Incidentes Ornith</span><strong>{{.IncidentSummary.LLM}}</strong><small>{{.Days}} días</small></div>
+        <div class="metric-card"><span>Pendientes de revisión</span><strong>{{.IncidentSummary.Open}}</strong><small><a href="/incidents?status=open">abrir cola</a></small></div>
+        <div class="metric-card"><span>Críticos</span><strong>{{.IncidentSummary.Critical}}</strong><small>requieren atención</small></div>
+        <div class="metric-card"><span>Reportes de usuarios</span><strong>{{.IncidentSummary.UserReports}}</strong><small>{{.Days}} días</small></div>
+    </div>
+
+    <div class="grid-2-1 mt-4">
+        <section class="card">
+            <div class="card-header"><span>Actividad reciente de topics</span><a href="/sauvage/activity" class="small">Ver todo</a></div>
+            <div class="table-wrap">
+                <table class="table">
+                    <thead><tr><th>Hora</th><th>Topic</th><th>Usuario</th><th>Regla</th><th>Acción</th><th>Modo</th></tr></thead>
+                    <tbody>
+                    {{range .Snapshot.RecentEvents}}
+                    <tr>
+                        <td class="nowrap">{{.CreatedAt.Format "02/01 15:04"}}</td>
+                        <td>{{topicName .ThreadID}}</td>
+                        <td><a href="/sauvage/activity?user={{.UserID}}">{{.UserID}}</a></td>
+                        <td><code>{{.RuleCode}}</code></td>
+                        <td><span class="badge {{if eq .Action "allow"}}badge-ham{{else if eq .Action "ban"}}badge-spam{{else}}badge-warn{{end}}">{{.Action}}</span></td>
+                        <td>{{if .Shadow}}<span class="badge badge-info">shadow</span>{{else}}<span class="badge badge-spam">live</span>{{end}}</td>
+                    </tr>
+                    {{else}}<tr><td colspan="6" class="center-text muted">Todavía no hay decisiones registradas</td></tr>{{end}}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section>
+            <div class="card">
+                <div class="card-header">Estado de reglas</div>
+                <div class="card-body status-list">
+                    <div><span>Ornith / global</span>{{if .Settings.DryModeEnabled}}<span class="badge badge-info">shadow</span>{{else}}<span class="badge badge-spam">live</span>{{end}}</div>
+                    <div><span>Presentaciones / Concurso</span>{{if .Settings.CommunityApplyActions}}<span class="badge badge-spam">live</span>{{else}}<span class="badge badge-info">shadow</span>{{end}}</div>
+                    <div><span>Modelo</span><code>{{.Settings.OpenAIModel}}</code></div>
+                    <div><span>Concurso activo</span><code>{{.Settings.ContestID}}</code></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">Escalado previsto</div>
+                <div class="card-body">
+                    <ol class="compact-list">
+                        <li>Warning y borrado</li>
+                        <li>Restricción 1 hora</li>
+                        <li>Restricción 24 horas</li>
+                        <li>Expulsión</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <section class="card mt-4">
+        <div class="card-header">Últimos intentos de acción en Telegram</div>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Hora</th><th>Comando</th><th>Usuario</th><th>Mensaje</th><th>Intento</th><th>Resultado</th><th>Error</th></tr></thead>
+                <tbody>
+                {{range .Actions}}
+                <tr>
+                    <td class="nowrap">{{.CreatedAt.Format "02/01 15:04:05"}}</td><td><code>{{.Command}}</code></td>
+                    <td>{{.SubjectID}}</td><td>{{.MessageID}}</td><td>{{.Attempt}}</td>
+                    <td>{{if eq .Status "completed"}}<span class="badge badge-ham">correcto</span>{{else}}<span class="badge badge-spam">fallido</span>{{end}}</td>
+                    <td class="truncate text-danger">{{.LastError}}</td>
+                </tr>
+                {{else}}<tr><td colspan="7" class="center-text muted">No hay acciones; esto es normal en dry-run</td></tr>{{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+</main>
+</body></html>

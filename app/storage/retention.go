@@ -16,6 +16,7 @@ type RetentionConfig struct {
 	DetectedSpamTTL      time.Duration
 	IncomingEventsTTL    time.Duration
 	ModerationActionsTTL time.Duration
+	CommunityEventsTTL   time.Duration
 	LabelsTTL            time.Duration
 	CandidatesTTL        time.Duration
 	UsageCountersTTL     time.Duration
@@ -94,6 +95,7 @@ func (s *RetentionService) buildCleaners() []cleanSpec {
 	add("knowledge_snapshots", "created_at", s.config.LabelsTTL)
 	add("incoming_events", "received_at", s.config.IncomingEventsTTL)
 	add("moderation_actions", "created_at", s.config.ModerationActionsTTL)
+	add("community_rule_events", "created_at", s.config.CommunityEventsTTL)
 	add("messages", "time", s.config.IncomingEventsTTL)
 	add("spam", "time", s.config.IncomingEventsTTL)
 	add("reports", "report_time", s.config.IncomingEventsTTL)

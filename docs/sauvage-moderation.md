@@ -95,3 +95,23 @@ The new SQL tables store no raw message body:
 Ingress records include topic and media-group identifiers for traceability. Retention now uses the
 real timestamp columns and propagates SQL errors instead of silently reporting success. Back up the
 database before changing the active contest or enabling actions, and test restore before rollout.
+
+## Operational dashboard and SSO
+
+Enable the built-in dashboard with `SERVER_ENABLED=true`. The Sauvage deployment uses Keycloak
+Google authentication at the Traefik layer and Shield validates the forwarded identity again:
+
+```env
+SERVER_FORWARD_AUTH_HEADER=X-Auth-Request-Email
+SERVER_FORWARD_AUTH_EMAILS=me@e-dani.com
+SERVER_FORWARD_AUTH_PROXY_CIDRS=10.42.0.0/16,100.107.21.89/32,100.71.117.127/32,100.75.189.75/32,100.109.183.9/32
+```
+
+Never expose the Shield service directly. NetworkPolicy must only admit Traefik Edge and Traefik
+LAN. The `/32` addresses are the current host-network Traefik Edge nodes; update this allowlist if
+those ingress nodes change. The dashboard provides summary totals, deterministic rule events, the durable Telegram action
+journal, presentations, contest entries, live strike counters, CSV export, and runtime state. The
+daily digest contains counts only and never includes member message bodies.
+
+`RETENTION_COMMUNITY_EVENTS_TTL` controls the audit-event lifetime independently from persistent
+presentation claims and per-contest entry claims.

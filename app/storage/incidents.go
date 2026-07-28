@@ -129,6 +129,17 @@ type IncidentStorage struct {
 	engine.RWLocker
 }
 
+// IncidentDashboardSummary contains aggregate incident counts for an operations window.
+type IncidentDashboardSummary struct {
+	Since       time.Time `json:"since" db:"-"`
+	Total       int       `json:"total" db:"total"`
+	Open        int       `json:"open" db:"open"`
+	Resolved    int       `json:"resolved" db:"resolved"`
+	Critical    int       `json:"critical" db:"critical"`
+	LLM         int       `json:"llm" db:"llm"`
+	UserReports int       `json:"user_reports" db:"user_reports"`
+}
+
 func NewIncidentStorage(ctx context.Context, db *engine.SQL) (*IncidentStorage, error) {
 	if db == nil {
 		return nil, fmt.Errorf("db connection is nil")
@@ -287,6 +298,29 @@ func (s *IncidentStorage) List(ctx context.Context, filter audit.IncidentFilter)
 	result := make([]audit.Incident, len(recs))
 	for i, r := range recs {
 		result[i] = r.toIncident()
+	}
+	return result, nil
+}
+
+// DashboardSummary returns tenant-scoped incident totals without loading message contents.
+func (s *IncidentStorage) DashboardSummary(ctx context.Context, since time.Time) (IncidentDashboardSummary, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	if since.IsZero() {
+		since = time.Now().UTC().Add(-7 * 24 * time.Hour)
+	}
+	result := IncidentDashboardSummary{Since: since.UTC()}
+	query := s.Adopt(`SELECT
+		COUNT(*) AS total,
+		COALESCE(SUM(CASE WHEN status IN ('open', 'reviewing', 'appealed') THEN 1 ELSE 0 END), 0) AS open,
+		COALESCE(SUM(CASE WHEN status IN ('resolved', 'closed') THEN 1 ELSE 0 END), 0) AS resolved,
+		COALESCE(SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END), 0) AS critical,
+		COALESCE(SUM(CASE WHEN reason_code IN ('llm_openai', 'llm_gemini') THEN 1 ELSE 0 END), 0) AS llm,
+		COALESCE(SUM(CASE WHEN source = 'user_report' THEN 1 ELSE 0 END), 0) AS user_reports
+		FROM incidents WHERE tenant_id = ? AND created_at >= ?`)
+	if err := s.GetContext(ctx, &result, query, s.TenantID(), since.UTC()); err != nil {
+		return IncidentDashboardSummary{}, fmt.Errorf("load incident dashboard summary: %w", err)
 	}
 	return result, nil
 }

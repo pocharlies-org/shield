@@ -1,0 +1,256 @@
+package community
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// DashboardSummary contains the operational totals shown in the Sauvage dashboard.
+type DashboardSummary struct {
+	Since            time.Time
+	TotalEvents      int
+	Allowed          int
+	Violations       int
+	ShadowViolations int
+	LiveViolations   int
+	Warnings         int
+	Restrictions     int
+	Bans             int
+	Presentations    int
+	ContestEntries   int
+	UsersWithStrikes int
+}
+
+// DailyRuleCount groups community decisions by UTC day and enforcement mode.
+type DailyRuleCount struct {
+	Day    string `db:"day"`
+	Shadow bool   `db:"shadow"`
+	Count  int    `db:"count"`
+}
+
+// RuleEvent is one deterministic topic decision.
+type RuleEvent struct {
+	EventKey       string    `db:"event_key"`
+	ChatID         int64     `db:"chat_id"`
+	ThreadID       int       `db:"thread_id"`
+	MessageID      int       `db:"message_id"`
+	UserID         int64     `db:"user_id"`
+	RuleCode       string    `db:"rule_code"`
+	Action         string    `db:"action"`
+	Reason         string    `db:"reason"`
+	UserMessage    string    `db:"user_message"`
+	DurationSecond int64     `db:"duration_seconds"`
+	Shadow         bool      `db:"shadow"`
+	CreatedAt      time.Time `db:"created_at"`
+}
+
+// PresentationRecord identifies a member's persistent presentation claim.
+type PresentationRecord struct {
+	UserID         int64     `db:"user_id"`
+	ThreadID       int       `db:"thread_id"`
+	FirstMessageID int       `db:"first_message_id"`
+	EntryKey       string    `db:"entry_key"`
+	CreatedAt      time.Time `db:"created_at"`
+}
+
+// ContestEntryRecord identifies one member entry in one contest.
+type ContestEntryRecord struct {
+	ContestID      string    `db:"contest_id"`
+	UserID         int64     `db:"user_id"`
+	ThreadID       int       `db:"thread_id"`
+	FirstMessageID int       `db:"first_message_id"`
+	EntryKey       string    `db:"entry_key"`
+	CreatedAt      time.Time `db:"created_at"`
+}
+
+// ViolationRecord contains the live strike counter for one member and rule.
+type ViolationRecord struct {
+	UserID    int64     `db:"user_id"`
+	RuleCode  string    `db:"rule_code"`
+	Strikes   int       `db:"strikes"`
+	UpdatedAt time.Time `db:"updated_at"`
+}
+
+// DashboardSnapshot is a bounded operational view for the web UI and API.
+type DashboardSnapshot struct {
+	Summary      DashboardSummary
+	Daily        []DailyRuleCount
+	RecentEvents []RuleEvent
+}
+
+// RuleEventFilter bounds and filters a community event query.
+type RuleEventFilter struct {
+	Since    time.Time
+	ThreadID int
+	UserID   int64
+	RuleCode string
+	Action   string
+	Shadow   *bool
+	Limit    int
+}
+
+// Dashboard returns summary totals, a daily trend, and recent decisions.
+func (s *Store) Dashboard(ctx context.Context, since time.Time, limit int) (DashboardSnapshot, error) {
+	if since.IsZero() {
+		since = time.Now().UTC().Add(-7 * 24 * time.Hour)
+	}
+	events, err := s.ListRuleEvents(ctx, RuleEventFilter{Since: since, Limit: limit})
+	if err != nil {
+		return DashboardSnapshot{}, err
+	}
+
+	summary := DashboardSummary{Since: since}
+	query := s.db.Adopt(`SELECT
+		COUNT(*) AS total_events,
+		COALESCE(SUM(CASE WHEN action = 'allow' THEN 1 ELSE 0 END), 0) AS allowed,
+		COALESCE(SUM(CASE WHEN action <> 'allow' THEN 1 ELSE 0 END), 0) AS violations,
+		COALESCE(SUM(CASE WHEN action <> 'allow' AND shadow = ? THEN 1 ELSE 0 END), 0) AS shadow_violations,
+		COALESCE(SUM(CASE WHEN action <> 'allow' AND shadow = ? THEN 1 ELSE 0 END), 0) AS live_violations,
+		COALESCE(SUM(CASE WHEN action = 'warn' THEN 1 ELSE 0 END), 0) AS warnings,
+		COALESCE(SUM(CASE WHEN action = 'restrict' THEN 1 ELSE 0 END), 0) AS restrictions,
+		COALESCE(SUM(CASE WHEN action = 'ban' THEN 1 ELSE 0 END), 0) AS bans
+		FROM community_rule_events WHERE tenant_id = ? AND created_at >= ?`)
+	var totals struct {
+		TotalEvents      int `db:"total_events"`
+		Allowed          int `db:"allowed"`
+		Violations       int `db:"violations"`
+		ShadowViolations int `db:"shadow_violations"`
+		LiveViolations   int `db:"live_violations"`
+		Warnings         int `db:"warnings"`
+		Restrictions     int `db:"restrictions"`
+		Bans             int `db:"bans"`
+	}
+	if err = s.db.GetContext(ctx, &totals, query, true, false, s.db.TenantID(), since.UTC()); err != nil {
+		return DashboardSnapshot{}, fmt.Errorf("load community dashboard totals: %w", err)
+	}
+	summary.TotalEvents = totals.TotalEvents
+	summary.Allowed = totals.Allowed
+	summary.Violations = totals.Violations
+	summary.ShadowViolations = totals.ShadowViolations
+	summary.LiveViolations = totals.LiveViolations
+	summary.Warnings = totals.Warnings
+	summary.Restrictions = totals.Restrictions
+	summary.Bans = totals.Bans
+
+	if err = s.db.GetContext(ctx, &summary.Presentations, s.db.Adopt(
+		`SELECT COUNT(*) FROM community_presentations WHERE tenant_id = ?`), s.db.TenantID()); err != nil {
+		return DashboardSnapshot{}, fmt.Errorf("count community presentations: %w", err)
+	}
+	if err = s.db.GetContext(ctx, &summary.ContestEntries, s.db.Adopt(
+		`SELECT COUNT(*) FROM community_contest_entries WHERE tenant_id = ?`), s.db.TenantID()); err != nil {
+		return DashboardSnapshot{}, fmt.Errorf("count community contest entries: %w", err)
+	}
+	if err = s.db.GetContext(ctx, &summary.UsersWithStrikes, s.db.Adopt(
+		`SELECT COUNT(DISTINCT user_id) FROM community_violations WHERE tenant_id = ?`), s.db.TenantID()); err != nil {
+		return DashboardSnapshot{}, fmt.Errorf("count community users with strikes: %w", err)
+	}
+
+	var daily []DailyRuleCount
+	dailyQuery := s.db.Adopt(`SELECT SUBSTR(CAST(created_at AS TEXT), 1, 10) AS day, shadow, COUNT(*) AS count
+		FROM community_rule_events
+		WHERE tenant_id = ? AND created_at >= ? AND action <> 'allow'
+		GROUP BY SUBSTR(CAST(created_at AS TEXT), 1, 10), shadow
+		ORDER BY SUBSTR(CAST(created_at AS TEXT), 1, 10) ASC, shadow DESC`)
+	if err = s.db.SelectContext(ctx, &daily, dailyQuery, s.db.TenantID(), since.UTC()); err != nil {
+		return DashboardSnapshot{}, fmt.Errorf("load community daily trend: %w", err)
+	}
+	return DashboardSnapshot{Summary: summary, Daily: daily, RecentEvents: events}, nil
+}
+
+// ListRuleEvents returns newest decisions first.
+func (s *Store) ListRuleEvents(ctx context.Context, filter RuleEventFilter) ([]RuleEvent, error) {
+	limit := filter.Limit
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	where := []string{"tenant_id = ?"}
+	args := []any{s.db.TenantID()}
+	if !filter.Since.IsZero() {
+		where = append(where, "created_at >= ?")
+		args = append(args, filter.Since.UTC())
+	}
+	if filter.ThreadID > 0 {
+		where = append(where, "thread_id = ?")
+		args = append(args, filter.ThreadID)
+	}
+	if filter.UserID != 0 {
+		where = append(where, "user_id = ?")
+		args = append(args, filter.UserID)
+	}
+	if strings.TrimSpace(filter.RuleCode) != "" {
+		where = append(where, "rule_code = ?")
+		args = append(args, strings.TrimSpace(filter.RuleCode))
+	}
+	if strings.TrimSpace(filter.Action) != "" {
+		where = append(where, "action = ?")
+		args = append(args, strings.TrimSpace(filter.Action))
+	}
+	if filter.Shadow != nil {
+		where = append(where, "shadow = ?")
+		args = append(args, *filter.Shadow)
+	}
+	args = append(args, limit)
+
+	query := s.db.Adopt(`SELECT event_key, chat_id, thread_id, message_id, user_id, rule_code, action,
+		reason, user_message, duration_seconds, shadow, created_at
+		FROM community_rule_events WHERE ` + strings.Join(where, " AND ") + `
+		ORDER BY created_at DESC LIMIT ?`)
+	var events []RuleEvent
+	if err := s.db.SelectContext(ctx, &events, query, args...); err != nil {
+		return nil, fmt.Errorf("list community rule events: %w", err)
+	}
+	return events, nil
+}
+
+// ListPresentations returns persistent presentation claims newest first.
+func (s *Store) ListPresentations(ctx context.Context, limit int) ([]PresentationRecord, error) {
+	limit = boundedLimit(limit)
+	query := s.db.Adopt(`SELECT user_id, thread_id, first_message_id, entry_key, created_at
+		FROM community_presentations WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?`)
+	var records []PresentationRecord
+	if err := s.db.SelectContext(ctx, &records, query, s.db.TenantID(), limit); err != nil {
+		return nil, fmt.Errorf("list community presentations: %w", err)
+	}
+	return records, nil
+}
+
+// ListContestEntries returns contest claims newest first, optionally for one contest.
+func (s *Store) ListContestEntries(ctx context.Context, contestID string, limit int) ([]ContestEntryRecord, error) {
+	limit = boundedLimit(limit)
+	where := "tenant_id = ?"
+	args := []any{s.db.TenantID()}
+	if strings.TrimSpace(contestID) != "" {
+		where += " AND contest_id = ?"
+		args = append(args, strings.TrimSpace(contestID))
+	}
+	args = append(args, limit)
+	query := s.db.Adopt(`SELECT contest_id, user_id, thread_id, first_message_id, entry_key, created_at
+		FROM community_contest_entries WHERE ` + where + ` ORDER BY created_at DESC LIMIT ?`)
+	var records []ContestEntryRecord
+	if err := s.db.SelectContext(ctx, &records, query, args...); err != nil {
+		return nil, fmt.Errorf("list community contest entries: %w", err)
+	}
+	return records, nil
+}
+
+// ListViolations returns current live strike counters.
+func (s *Store) ListViolations(ctx context.Context, limit int) ([]ViolationRecord, error) {
+	limit = boundedLimit(limit)
+	query := s.db.Adopt(`SELECT user_id, rule_code, strikes, updated_at
+		FROM community_violations WHERE tenant_id = ?
+		ORDER BY strikes DESC, updated_at DESC LIMIT ?`)
+	var records []ViolationRecord
+	if err := s.db.SelectContext(ctx, &records, query, s.db.TenantID(), limit); err != nil {
+		return nil, fmt.Errorf("list community violations: %w", err)
+	}
+	return records, nil
+}
+
+func boundedLimit(limit int) int {
+	if limit <= 0 || limit > 1000 {
+		return 200
+	}
+	return limit
+}

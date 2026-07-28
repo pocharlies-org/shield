@@ -107,9 +107,13 @@ func activateServer(
 ) (err error) {
 	authPassswd := opts.Server.AuthPasswd
 	if opts.Server.AuthPasswd == "auto" {
-		return fmt.Errorf(
-			"SERVER_AUTH=auto is disabled because it exposes credentials in logs; configure SERVER_AUTH or SERVER_AUTH_HASH",
-		)
+		if len(opts.Server.ForwardAuthEmails) > 0 {
+			authPassswd = ""
+		} else {
+			return fmt.Errorf(
+				"SERVER_AUTH=auto is disabled because it exposes credentials in logs; configure SERVER_AUTH, SERVER_AUTH_HASH, or trusted forward auth",
+			)
+		}
 	}
 
 	// make store and load approved users
@@ -190,6 +194,11 @@ func activateServer(
 		DebugModeEnabled:         opts.Dbg,
 		DryModeEnabled:           opts.Dry,
 		TGDebugModeEnabled:       opts.TGDbg,
+		CommunityEnabled:         opts.Community.Enabled,
+		CommunityApplyActions:    opts.Community.ApplyActions,
+		PresentationThreadID:     opts.Community.PresentationThreadID,
+		ContestThreadID:          opts.Community.ContestThreadID,
+		ContestID:                opts.Community.ContestID,
 	}
 
 	srv := webapi.Server{Config: webapi.Config{
@@ -218,6 +227,12 @@ func activateServer(
 		MetricsCollector:      web.Metrics,
 		AuthPasswd:            authPassswd,
 		AuthHash:              opts.Server.AuthHash,
+		ForwardAuthHeader:     opts.Server.ForwardAuthHeader,
+		ForwardAuthEmails:     opts.Server.ForwardAuthEmails,
+		ForwardAuthProxyCIDRs: opts.Server.ForwardAuthProxyCIDRs,
+		CommunityDashboard:    web.CommunityStore,
+		ModerationActions:     web.ModerationActions,
+		IncidentDashboard:     web.IncidentDashboard,
 		Version:               revision,
 		Dbg:                   opts.Dbg,
 		Settings:              settings,
