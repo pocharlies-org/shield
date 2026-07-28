@@ -111,7 +111,8 @@ func activateServer(
 			authPassswd = ""
 		} else {
 			return fmt.Errorf(
-				"SERVER_AUTH=auto is disabled because it exposes credentials in logs; configure SERVER_AUTH, SERVER_AUTH_HASH, or trusted forward auth",
+				"SERVER_AUTH=auto is disabled because it exposes credentials in logs; " +
+					"configure SERVER_AUTH, SERVER_AUTH_HASH, or trusted forward auth",
 			)
 		}
 	}

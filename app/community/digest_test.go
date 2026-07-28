@@ -2,7 +2,6 @@ package community
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	tbapi "github.com/OvyFlash/telegram-bot-api"
@@ -56,7 +55,7 @@ func TestDigestIncludesCommunityIncidentAndActionCounts(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, digest.SendNow(ctx))
 	require.Equal(t, int64(-10099), sent.ChatID)
-	require.True(t, strings.Contains(sent.Text, "Incidentes Ornith / pendientes / críticos: 1 / 1 / 1"))
-	require.True(t, strings.Contains(sent.Text, "Acciones Telegram correctas / fallidas: 1 / 0"))
-	require.True(t, strings.Contains(sent.Text, "https://sauvage-bot.e-dani.com"))
+	require.Contains(t, sent.Text, "Alertas Ornith / pendientes / críticas: 1 / 1 / 1")
+	require.Contains(t, sent.Text, "Acciones Telegram correctas / fallidas: 1 / 0")
+	require.Contains(t, sent.Text, "https://sauvage-bot.e-dani.com")
 }

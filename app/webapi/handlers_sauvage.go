@@ -51,7 +51,7 @@ func (s *Server) htmlSauvageOverviewHandler(w http.ResponseWriter, r *http.Reque
 	}
 	incidentSummary, err := s.IncidentDashboard.DashboardSummary(r.Context(), since)
 	if err != nil {
-		http.Error(w, "No se pudieron resumir los incidentes", http.StatusInternalServerError)
+		http.Error(w, "No se pudieron resumir los casos", http.StatusInternalServerError)
 		return
 	}
 	if err = tmpl.ExecuteTemplate(w, "sauvage.html", sauvageOverviewView{
@@ -243,7 +243,10 @@ func (s *Server) sauvageCSVHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="sauvage-rule-events.csv"`)
 	writer := csv.NewWriter(w)
-	_ = writer.Write([]string{"created_at", "topic", "user_id", "message_id", "rule", "action", "mode", "reason", "duration_seconds"})
+	_ = writer.Write([]string{
+		"created_at", "topic", "user_id", "message_id", "rule",
+		"action", "mode", "reason", "duration_seconds",
+	})
 	for _, event := range events {
 		mode := "live"
 		if event.Shadow {

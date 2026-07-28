@@ -85,11 +85,11 @@ func (d *Digest) SendNow(ctx context.Context) error {
 	s := snapshot.Summary
 	text := fmt.Sprintf(
 		"Informe diario de Sauvage\n\n"+
-			"Decisiones de topics: %d\n"+
+			"Evaluaciones de topics: %d\n"+
 			"Infracciones simuladas: %d\n"+
 			"Infracciones activas: %d\n"+
 			"Warnings / restricciones / expulsiones: %d / %d / %d\n"+
-			"Incidentes Ornith / pendientes / críticos: %d / %d / %d\n"+
+			"Alertas Ornith / pendientes / críticas: %d / %d / %d\n"+
 			"Acciones Telegram correctas / fallidas: %d / %d\n"+
 			"Presentaciones acumuladas: %d\n"+
 			"Participaciones acumuladas: %d",
