@@ -1,10 +1,10 @@
 package slowpath
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strconv"
+	"io"
 	"strings"
 )
 
@@ -14,141 +14,38 @@ type llmResponse struct {
 	Confidence int    `json:"confidence"`
 }
 
-var (
-	trailingCommaRe = regexp.MustCompile(`,\s*([}\]])`)
-	spamFieldRe     = regexp.MustCompile(`(?is)"?spam"?\s*:\s*("?(?:true|false|1|0)"?)`)
-	reasonFieldRe   = regexp.MustCompile(`(?is)"?reason"?\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')`)
-	confFieldRe     = regexp.MustCompile(`(?is)"?confidence"?\s*:\s*"?(\d{1,3})"?`)
-	thoughtRe       = regexp.MustCompile(`<thought>(?s).*?</thought>`)
-)
-
 func parseLLMOutput(content string) (llmResponse, error) {
-	clean := strings.TrimSpace(stripThoughtTags(content))
+	clean := strings.TrimSpace(content)
 	if clean == "" {
 		return llmResponse{}, fmt.Errorf("empty response")
 	}
 
-	candidates := []string{clean}
-	if extracted := extractFirstJSON(clean); extracted != "" && extracted != clean {
-		candidates = append(candidates, extracted)
+	var wire struct {
+		IsSpam     *bool   `json:"spam"`
+		Reason     *string `json:"reason"`
+		Confidence *int    `json:"confidence"`
 	}
-
-	for _, c := range candidates {
-		if resp, err := unmarshalLLM(c); err == nil {
-			return resp, nil
-		}
-		if fixed := fixTrailingComma(c); fixed != c {
-			if resp, err := unmarshalLLM(fixed); err == nil {
-				return resp, nil
-			}
-		}
+	decoder := json.NewDecoder(bytes.NewBufferString(clean))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wire); err != nil {
+		return llmResponse{}, fmt.Errorf("decode strict LLM response: %w", err)
 	}
-
-	for _, c := range candidates {
-		if resp, ok := parseFallback(c); ok {
-			return resp, nil
-		}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return llmResponse{}, fmt.Errorf("response must contain exactly one JSON object")
 	}
-
-	return llmResponse{}, fmt.Errorf("can't parse LLM response: %s", clean)
-}
-
-func stripThoughtTags(content string) string {
-	return thoughtRe.ReplaceAllString(content, "")
-}
-
-func unmarshalLLM(content string) (llmResponse, error) {
-	var r llmResponse
-	if err := json.Unmarshal([]byte(content), &r); err != nil {
-		return llmResponse{}, fmt.Errorf("unmarshal: %w", err)
+	if wire.IsSpam == nil || wire.Reason == nil || wire.Confidence == nil {
+		return llmResponse{}, fmt.Errorf("spam, reason, and confidence are required")
 	}
-	return r, nil
-}
-
-func fixTrailingComma(content string) string {
-	return trailingCommaRe.ReplaceAllString(content, "$1")
-}
-
-func extractFirstJSON(content string) string {
-	start := strings.IndexByte(content, '{')
-	if start < 0 {
-		return ""
+	reason := strings.TrimSpace(*wire.Reason)
+	if reason == "" {
+		return llmResponse{}, fmt.Errorf("reason is required")
 	}
-
-	depth, inStr, escaped := 0, false, false
-	for i := start; i < len(content); i++ {
-		ch := content[i]
-		if inStr {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if ch == '\\' {
-				escaped = true
-				continue
-			}
-			if ch == '"' {
-				inStr = false
-			}
-			continue
-		}
-		switch ch {
-		case '"':
-			inStr = true
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return content[start : i+1]
-			}
-		}
+	if *wire.Confidence < 1 || *wire.Confidence > 100 {
+		return llmResponse{}, fmt.Errorf("confidence must be between 1 and 100")
 	}
-	return ""
-}
-
-func parseFallback(content string) (llmResponse, bool) {
-	sm := spamFieldRe.FindStringSubmatch(content)
-	rm := reasonFieldRe.FindStringSubmatch(content)
-	cm := confFieldRe.FindStringSubmatch(content)
-	if len(sm) < 2 || len(rm) < 2 || len(cm) < 2 {
-		return llmResponse{}, false
+	if *wire.IsSpam && *wire.Confidence <= 80 {
+		return llmResponse{}, fmt.Errorf("spam decision requires confidence above 80")
 	}
-
-	isSpam, ok := parseBool(sm[1])
-	if !ok {
-		return llmResponse{}, false
-	}
-
-	reason, err := strconv.Unquote(normalizeQuote(rm[1]))
-	if err != nil {
-		return llmResponse{}, false
-	}
-
-	conf, err := strconv.Atoi(cm[1])
-	if err != nil {
-		return llmResponse{}, false
-	}
-
-	return llmResponse{IsSpam: isSpam, Reason: reason, Confidence: conf}, true
-}
-
-func parseBool(raw string) (val, ok bool) {
-	v := strings.Trim(strings.ToLower(raw), `" `)
-	switch v {
-	case "true", "1":
-		return true, true
-	case "false", "0":
-		return false, true
-	default:
-		return false, false
-	}
-}
-
-func normalizeQuote(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
-		return `"` + strings.ReplaceAll(raw[1:len(raw)-1], `"`, `\"`) + `"`
-	}
-	return raw
+	return llmResponse{IsSpam: *wire.IsSpam, Reason: reason, Confidence: *wire.Confidence}, nil
 }

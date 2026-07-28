@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><title>Actividad Sauvage - Shield</title>{{template "heads.html"}}</head>
+<body x-data="{ navOpen: false, tab: 'rules' }">
+{{template "sidebar.html"}}
+<div class="scrim" x-show="navOpen" @click="navOpen=false" x-cloak></div>
+<main class="main">
+<header class="topbar"><button class="topbar__burger" @click="navOpen=!navOpen"><i class="bi bi-list"></i></button><h2 class="page-title">Actividad de moderación</h2></header>
+<div class="content content-wide">
+    <form class="filter-bar" method="get">
+        <div class="field"><label>Días</label><input class="input" type="number" name="days" min="1" max="90" value="{{.Days}}"></div>
+        <div class="field"><label>Topic</label><select class="select" name="thread"><option value="0">Todos</option><option value="1">General</option><option value="2">Preguntas</option><option value="3">Presentaciones</option><option value="5">Calendario</option><option value="6">Concurso</option></select></div>
+        <div class="field"><label>Usuario</label><input class="input" name="user" inputmode="numeric" placeholder="ID Telegram"></div>
+        <div class="field"><label>Regla</label><input class="input" name="rule" placeholder="presentation_duplicate"></div>
+        <div class="field"><label>Acción</label><select class="select" name="action"><option value="">Todas</option><option value="allow">allow</option><option value="warn">warn</option><option value="restrict">restrict</option><option value="ban">ban</option></select></div>
+        <div class="field"><label>Modo</label><select class="select" name="mode"><option value="">Todos</option><option value="shadow">Shadow</option><option value="live">Live</option></select></div>
+        <button class="btn btn-accent" type="submit">Filtrar</button>
+    </form>
+    <div class="tabs">
+        <button class="tab" :class="{ 'is-active': tab === 'rules' }" @click="tab='rules'">Decisiones de reglas</button>
+        <button class="tab" :class="{ 'is-active': tab === 'actions' }" @click="tab='actions'">Acciones Telegram</button>
+    </div>
+    <section x-show="tab === 'rules'">
+        <div class="table-wrap"><table class="table">
+            <thead><tr><th>Fecha</th><th>Topic</th><th>Usuario</th><th>Mensaje</th><th>Regla</th><th>Acción</th><th>Modo</th><th>Motivo</th></tr></thead>
+            <tbody>{{range .Events}}<tr>
+                <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td><td>{{topicName .ThreadID}}</td>
+                <td><a href="/sauvage/activity?user={{.UserID}}">{{.UserID}}</a></td>
+                <td><a href="{{telegramMessageURL .ChatID .ThreadID .MessageID}}" target="_blank" rel="noreferrer">{{.MessageID}} <i class="bi bi-box-arrow-up-right"></i></a></td>
+                <td><code>{{.RuleCode}}</code></td><td>{{.Action}}</td>
+                <td>{{if .Shadow}}<span class="badge badge-info">shadow</span>{{else}}<span class="badge badge-spam">live</span>{{end}}</td>
+                <td>{{.Reason}}</td>
+            </tr>{{else}}<tr><td colspan="8" class="center-text muted">Sin resultados</td></tr>{{end}}</tbody>
+        </table></div>
+    </section>
+    <section x-show="tab === 'actions'" x-cloak>
+        <div class="table-wrap"><table class="table">
+            <thead><tr><th>Fecha</th><th>Comando</th><th>Usuario</th><th>Mensaje</th><th>Intento</th><th>Estado</th><th>Error</th><th>Correlación</th></tr></thead>
+            <tbody>{{range .Actions}}<tr>
+                <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td><td><code>{{.Command}}</code></td><td>{{.SubjectID}}</td><td>{{.MessageID}}</td>
+                <td>{{.Attempt}}</td><td>{{if eq .Status "completed"}}<span class="badge badge-ham">correcto</span>{{else}}<span class="badge badge-spam">fallido</span>{{end}}</td>
+                <td class="truncate text-danger">{{.LastError}}</td><td class="small mono">{{.CorrelationID}}</td>
+            </tr>{{else}}<tr><td colspan="8" class="center-text muted">No hay acciones registradas</td></tr>{{end}}</tbody>
+        </table></div>
+    </section>
+</div></main></body></html>

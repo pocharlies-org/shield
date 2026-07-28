@@ -19,6 +19,7 @@ import (
 	"github.com/go-pkgz/routegroup"
 
 	"github.com/redstone-md/shield/app/audit"
+	"github.com/redstone-md/shield/app/community"
 	"github.com/redstone-md/shield/app/events"
 	"github.com/redstone-md/shield/app/feedback"
 	"github.com/redstone-md/shield/app/observability"
@@ -39,7 +40,9 @@ import (
 
 //go:embed assets/* assets/components/*
 var templateFS embed.FS
-var tmpl = template.Must(template.New("").Funcs(template.FuncMap{"dict": templateDict}).
+var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
+	"dict": templateDict, "topicName": topicName, "telegramMessageURL": telegramMessageURL,
+}).
 	ParseFS(templateFS, "assets/*.html", "assets/components/*.html"))
 
 // templateDict builds a map from alternating key/value pairs, for use as a
@@ -94,6 +97,9 @@ type Config struct {
 	RateLimiter           *TenantRateLimiter         // per-tenant rate limiter (nil = unlimited)
 	AuthPasswd            string                     // basic auth password for user "tg-spam"
 	AuthHash              string                     // basic auth bcrypt hash for user "tg-spam", takes precedence over AuthPasswd
+	ForwardAuthHeader     string                     // trusted reverse-proxy email header
+	ForwardAuthEmails     []string                   // exact email allowlist for forward auth
+	ForwardAuthProxyCIDRs []string                   // proxy source ranges allowed to assert identity
 	AuditService          *audit.Service             // audit service for incidents
 	AppealService         *audit.AppealService       // appeal service for incident appeals
 	FeedbackService       *feedback.Service          // feedback service for labeling
@@ -102,6 +108,9 @@ type Config struct {
 	OnboardingProvider    OnboardingService          // tenant onboarding/offboarding
 	RestoreProvider       RestoreService             // tenant restore from backup
 	MetricsCollector      MetricsProvider            // SLO/SLA metrics
+	CommunityDashboard    CommunityDashboardProvider // Sauvage topic-rule dashboard
+	ModerationActions     ModerationActionsProvider  // executor action journal
+	IncidentDashboard     IncidentDashboardProvider  // aggregate incident counts without message contents
 	Dbg                   bool                       // debug mode
 	Settings              Settings                   // application settings
 	// EnvPinnedKeys lists RuleSet JSON paths whose value is pinned by an env var
@@ -123,6 +132,26 @@ type MetricsProvider interface {
 	Add(name string, delta int64)
 	Observe(name string, duration time.Duration)
 	Snapshot() any
+}
+
+// CommunityDashboardProvider exposes bounded, read-only community operations data.
+type CommunityDashboardProvider interface {
+	Dashboard(ctx context.Context, since time.Time, limit int) (community.DashboardSnapshot, error)
+	ListRuleEvents(ctx context.Context, filter community.RuleEventFilter) ([]community.RuleEvent, error)
+	ListPresentations(ctx context.Context, limit int) ([]community.PresentationRecord, error)
+	ListContestEntries(ctx context.Context, contestID string, limit int) ([]community.ContestEntryRecord, error)
+	ListViolations(ctx context.Context, limit int) ([]community.ViolationRecord, error)
+}
+
+// ModerationActionsProvider exposes the durable Telegram action journal.
+type ModerationActionsProvider interface {
+	Recent(ctx context.Context, since time.Time, limit int) ([]storage.ModerationActionEntry, error)
+	Summary(ctx context.Context, since time.Time) (storage.ModerationActionSummary, error)
+}
+
+// IncidentDashboardProvider exposes bounded aggregate counts for LLM and report incidents.
+type IncidentDashboardProvider interface {
+	DashboardSummary(ctx context.Context, since time.Time) (storage.IncidentDashboardSummary, error)
 }
 
 type OnboardRequest struct {
@@ -199,6 +228,11 @@ type Settings struct {
 	DebugModeEnabled         bool          `json:"debug_mode_enabled"`
 	DryModeEnabled           bool          `json:"dry_mode_enabled"`
 	TGDebugModeEnabled       bool          `json:"tg_debug_mode_enabled"`
+	CommunityEnabled         bool          `json:"community_enabled"`
+	CommunityApplyActions    bool          `json:"community_apply_actions"`
+	PresentationThreadID     int           `json:"presentation_thread_id"`
+	ContestThreadID          int           `json:"contest_thread_id"`
+	ContestID                string        `json:"contest_id"`
 }
 
 // Detector is a spam detector interface.
@@ -310,7 +344,18 @@ func (s *Server) Run(ctx context.Context) error {
 			router.Use(rest.BasicAuthWithPrompt("tg-spam", s.AuthPasswd))
 		}
 	} else {
-		log.Printf("[WARN] basic auth disabled, access to webapi is not protected")
+		log.Printf("[INFO] basic auth disabled")
+	}
+	if len(s.ForwardAuthEmails) > 0 {
+		mw, err := newForwardAuthMiddleware(s.ForwardAuthHeader, s.ForwardAuthEmails, s.ForwardAuthProxyCIDRs)
+		if err != nil {
+			return fmt.Errorf("configure forward auth: %w", err)
+		}
+		router.Use(mw)
+		log.Printf("[INFO] forward auth enabled for %d allowed email(s)", len(s.ForwardAuthEmails))
+	}
+	if s.AuthPasswd == "" && s.AuthHash == "" && len(s.ForwardAuthEmails) == 0 {
+		log.Printf("[WARN] authentication disabled, access to webapi is not protected")
 	}
 
 	router = s.routes(router) // setup routes

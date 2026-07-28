@@ -1,0 +1,20 @@
+<!DOCTYPE html><html lang="es"><head><title>Sistema - Sauvage</title>{{template "heads.html"}}</head>
+<body x-data="{ navOpen:false }">{{template "sidebar.html"}}<main class="main">
+<header class="topbar"><button class="topbar__burger" @click="navOpen=!navOpen"><i class="bi bi-list"></i></button><h2 class="page-title">Estado del sistema</h2></header>
+<div class="content">
+<div class="grid-2">
+<section class="card"><div class="card-header">Runtime</div><div class="card-body status-list">
+<div><span>Versión</span><code>{{.Version}}</code></div><div><span>Uptime</span><span>{{.Uptime}}</span></div>
+<div><span>Instancia</span><code>{{.Settings.TenantID}}</code></div><div><span>Bot</span><code>@{{.Settings.BotUsername}}</code></div>
+</div></section>
+<section class="card"><div class="card-header">Moderación</div><div class="card-body status-list">
+<div><span>Dry-run global</span>{{if .Settings.DryModeEnabled}}<span class="badge badge-info">activo</span>{{else}}<span class="badge badge-spam">desactivado</span>{{end}}</div>
+<div><span>Acciones de comunidad</span>{{if .Settings.CommunityApplyActions}}<span class="badge badge-spam">activas</span>{{else}}<span class="badge badge-info">shadow</span>{{end}}</div>
+<div><span>Ornith</span><code>{{.Settings.OpenAIModel}}</code></div><div><span>Contexto</span><span>{{.Settings.LLMHistoryContextSize}} mensajes</span></div>
+</div></section>
+</div>
+<section class="card"><div class="card-header">Topics verificados</div><div class="card-body status-list">
+<div><span>Presentaciones</span><code>{{.Settings.PresentationThreadID}}</code></div><div><span>Concurso</span><code>{{.Settings.ContestThreadID}}</code></div><div><span>Concurso activo</span><code>{{.Settings.ContestID}}</code></div>
+</div></section>
+<div class="alert alert-info">Las sondas de Kubernetes usan <code>/healthz</code> y <code>/readyz</code> en un puerto separado. Las métricas internas están disponibles en <a href="/api/metrics">/api/metrics</a>.</div>
+</div></main></body></html>

@@ -123,7 +123,7 @@ func TestGeminiChecker_Check(t *testing.T) {
 		assert.Equal(t, spamcheck.Response{}, details)
 	})
 
-	t.Run("fallback parser handles wrapped json", func(t *testing.T) {
+	t.Run("strict parser rejects wrapped json", func(t *testing.T) {
 		clientMock.GenerateContentFunc = func(ctx context.Context, model string, contents []*genai.Content,
 			config *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
 			return &genai.GenerateContentResponse{
@@ -133,10 +133,10 @@ func TestGeminiChecker_Check(t *testing.T) {
 			}, nil
 		}
 		spam, details := checker.check(context.Background(), "some text", llmContext{})
-		assert.True(t, spam)
+		assert.False(t, spam)
 		assert.Equal(t, "gemini", details.Name)
-		assert.Equal(t, "wrapped, confidence: 87%", details.Details)
-		assert.NoError(t, details.Error)
+		assert.Contains(t, details.Details, "decode strict LLM response")
+		assert.Error(t, details.Error)
 	})
 }
 
@@ -276,9 +276,10 @@ func TestGeminiChecker_ResponseWithThoughtTags(t *testing.T) {
 
 	checker := newGeminiChecker(clientMock, GeminiConfig{Model: "gemma-4-31b-it"})
 	spam, details := checker.check(context.Background(), "buy crypto now", llmContext{})
-	assert.True(t, spam)
+	assert.False(t, spam)
 	assert.Equal(t, "gemini", details.Name)
-	assert.Equal(t, "crypto scam, confidence: 95%", details.Details)
+	assert.Contains(t, details.Details, "decode strict LLM response")
+	assert.Error(t, details.Error)
 }
 
 func TestGeminiChecker_TruncateUTF8(t *testing.T) {

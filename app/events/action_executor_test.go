@@ -146,6 +146,7 @@ func TestTelegramActionExecutor_WarnUserAppealButton(t *testing.T) {
 
 	err := exec.WarnUser(context.Background(), warnRequest{
 		chatID:      100,
+		threadID:    3,
 		subjectID:   200,
 		messageID:   5,
 		text:        "warned",
@@ -153,6 +154,7 @@ func TestTelegramActionExecutor_WarnUserAppealButton(t *testing.T) {
 		botUsername: "shield_bot",
 	})
 	require.NoError(t, err)
+	assert.Equal(t, 3, sent.MessageThreadID)
 
 	markup, ok := sent.ReplyMarkup.(tbapi.InlineKeyboardMarkup)
 	require.True(t, ok, "warn message must carry an inline keyboard")
@@ -191,11 +193,13 @@ func TestTelegramActionExecutor_PostBanMessage(t *testing.T) {
 
 	err := exec.PostBanMessage(context.Background(), banMessageRequest{
 		chatID:      100,
+		threadID:    6,
 		text:        "🚫 Пользователь забанен за спам",
 		incidentID:  42,
 		botUsername: "shield_bot",
 	})
 	require.NoError(t, err)
+	assert.Equal(t, 6, sent.MessageThreadID)
 	assert.Equal(t, "🚫 Пользователь забанен за спам", sent.Text)
 	markup, ok := sent.ReplyMarkup.(tbapi.InlineKeyboardMarkup)
 	require.True(t, ok, "ban message must carry the appeal keyboard")

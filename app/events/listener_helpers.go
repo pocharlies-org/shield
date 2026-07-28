@@ -151,8 +151,9 @@ func (l *TelegramListener) sendBotResponse(resp bot.Response, chatID int64, noti
 		return nil
 	}
 
-	log.Printf("[DEBUG] bot response - %+v, reply-to:%d", strings.ReplaceAll(resp.Text, "\n", "\\n"), resp.ReplyTo)
+	log.Printf("[DEBUG] bot response prepared, chars:%d, reply-to:%d", len(resp.Text), resp.ReplyTo)
 	tbMsg := tbapi.NewMessage(chatID, resp.Text)
+	tbMsg.MessageThreadID = resp.MessageThreadID
 	tbMsg.ParseMode = tbapi.ModeMarkdown
 	tbMsg.LinkPreviewOptions = tbapi.LinkPreviewOptions{IsDisabled: true}
 	tbMsg.ReplyParameters = tbapi.ReplyParameters{MessageID: resp.ReplyTo}
@@ -236,4 +237,17 @@ func (s SuperUsers) IsSuper(userName string, userID int64) bool {
 		}
 	}
 	return false
+}
+
+func authorizeAdminCallback(query *tbapi.CallbackQuery, adminChatID int64, superUsers SuperUsers) (bool, error) {
+	if query == nil || query.Message == nil {
+		return false, fmt.Errorf("callback has no message")
+	}
+	if query.Message.Chat.ID != adminChatID {
+		return false, nil
+	}
+	if query.From == nil || !superUsers.IsSuper(query.From.UserName, query.From.ID) {
+		return false, fmt.Errorf("callback actor is not authorized")
+	}
+	return true, nil
 }

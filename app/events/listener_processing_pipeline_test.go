@@ -211,7 +211,7 @@ func TestTelegramListener_AutomaticWarnCarriesMessageIDAndDeleteDuration(t *test
 	assert.Equal(t, 55, actionSpy.warnCalls[0].messageID)
 	assert.Equal(t, time.Minute, actionSpy.warnCalls[0].warnDelTime)
 	assert.Contains(t, actionSpy.warnCalls[0].text, `<a href="https://t.me/baz_02l_wss">Asya Kilisa</a>`)
-	assert.Contains(t, actionSpy.warnCalls[0].text, `Причина: vision spam reason`)
+	assert.Contains(t, actionSpy.warnCalls[0].text, `Motivo: vision spam reason`)
 }
 
 func TestTelegramListener_ProcessQueuedEventLogsCorrelationIDs(t *testing.T) {

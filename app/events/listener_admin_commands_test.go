@@ -74,7 +74,7 @@ func TestTelegramListener_DoWithDirectWarnReportUsesActionExecutor(t *testing.T)
 	assert.Equal(t, int64(666), actionSpy.warnCalls[0].subjectID)
 	assert.Equal(t, 999999, actionSpy.warnCalls[0].messageID)
 	assert.Equal(t, time.Minute, actionSpy.warnCalls[0].warnDelTime)
-	assert.Contains(t, actionSpy.warnCalls[0].text, "Предупреждение 1/3")
+	assert.Contains(t, actionSpy.warnCalls[0].text, "Aviso 1/3")
 	assert.Contains(t, actionSpy.warnCalls[0].text, "Не нарушайте правила чата.")
 
 	require.Len(t, mockAPI.SendCalls(), 1)

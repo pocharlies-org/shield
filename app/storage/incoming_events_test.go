@@ -27,6 +27,8 @@ func TestIncomingEventsRecord(t *testing.T) {
 		Source:          "telegram.update",
 		UpdateID:        701,
 		ChatID:          123,
+		MessageThreadID: 6,
+		MediaGroupID:    "album-701",
 		MessageID:       77,
 		EditedMessageID: 0,
 		IdempotencyKey:  "telegram:update:701:chat:123:message:77:edited:0",
@@ -49,10 +51,34 @@ func TestIncomingEventsRecord(t *testing.T) {
 	assert.Equal(t, "gr1", record.TenantID)
 	assert.Equal(t, event.UpdateID, record.UpdateID)
 	assert.Equal(t, event.ChatID, record.ChatID)
+	assert.Equal(t, event.MessageThreadID, record.MessageThreadID)
+	assert.Equal(t, event.MediaGroupID, record.MediaGroupID)
 	assert.Equal(t, event.MessageID, record.MessageID)
 	assert.Equal(t, event.EditedMessageID, record.EditedMessageID)
 	assert.Equal(t, event.IdempotencyKey, record.IdempotencyKey)
 	assert.True(t, event.ReceivedAt.Equal(record.ReceivedAt), "received_at mismatch: want %v, got %v", event.ReceivedAt, record.ReceivedAt)
+}
+
+func TestIncomingEventsReserveReclaimsUnfinishedEvent(t *testing.T) {
+	db, err := engine.NewSqlite(":memory:", "gr1")
+	require.NoError(t, err)
+	defer db.Close()
+
+	store, err := NewIncomingEvents(context.Background(), db)
+	require.NoError(t, err)
+	event := moderation.IncomingEvent{
+		EventID: "evt-reclaim", Source: "telegram.update", ChatID: 123,
+		IdempotencyKey: "reclaim-key", ReceivedAt: time.Now().UTC(),
+	}
+
+	first, err := store.Reserve(context.Background(), event)
+	require.NoError(t, err)
+	assert.True(t, first.Recorded)
+
+	reclaimed, err := store.Reserve(context.Background(), event)
+	require.NoError(t, err)
+	assert.True(t, reclaimed.Recorded)
+	assert.False(t, reclaimed.Processed)
 }
 
 func TestIncomingEventsReserveAndComplete(t *testing.T) {

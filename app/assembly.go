@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-pkgz/rest"
 	"github.com/sashabaranov/go-openai"
 	"google.golang.org/genai"
 
@@ -108,15 +107,14 @@ func activateServer(
 ) (err error) {
 	authPassswd := opts.Server.AuthPasswd
 	if opts.Server.AuthPasswd == "auto" {
-		authPassswd, err = webapi.GenerateRandomPassword(20)
-		if err != nil {
-			return fmt.Errorf("can't generate random password, %w", err)
+		if len(opts.Server.ForwardAuthEmails) > 0 {
+			authPassswd = ""
+		} else {
+			return fmt.Errorf(
+				"SERVER_AUTH=auto is disabled because it exposes credentials in logs; " +
+					"configure SERVER_AUTH, SERVER_AUTH_HASH, or trusted forward auth",
+			)
 		}
-		authHash, err := rest.GenerateBcryptHash(authPassswd)
-		if err != nil {
-			return fmt.Errorf("can't generate bcrypt hash for password, %w", err)
-		}
-		log.Printf("[WARN] generated basic auth password for user tg-spam: %q, bcrypt hash: %s", authPassswd, authHash)
 	}
 
 	// make store and load approved users
@@ -197,6 +195,11 @@ func activateServer(
 		DebugModeEnabled:         opts.Dbg,
 		DryModeEnabled:           opts.Dry,
 		TGDebugModeEnabled:       opts.TGDbg,
+		CommunityEnabled:         opts.Community.Enabled,
+		CommunityApplyActions:    opts.Community.ApplyActions,
+		PresentationThreadID:     opts.Community.PresentationThreadID,
+		ContestThreadID:          opts.Community.ContestThreadID,
+		ContestID:                opts.Community.ContestID,
 	}
 
 	srv := webapi.Server{Config: webapi.Config{
@@ -225,6 +228,12 @@ func activateServer(
 		MetricsCollector:      web.Metrics,
 		AuthPasswd:            authPassswd,
 		AuthHash:              opts.Server.AuthHash,
+		ForwardAuthHeader:     opts.Server.ForwardAuthHeader,
+		ForwardAuthEmails:     opts.Server.ForwardAuthEmails,
+		ForwardAuthProxyCIDRs: opts.Server.ForwardAuthProxyCIDRs,
+		CommunityDashboard:    web.CommunityStore,
+		ModerationActions:     web.ModerationActions,
+		IncidentDashboard:     web.IncidentDashboard,
 		Version:               revision,
 		Dbg:                   opts.Dbg,
 		Settings:              settings,

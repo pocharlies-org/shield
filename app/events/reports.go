@@ -15,7 +15,7 @@ import (
 	"github.com/redstone-md/shield/lib/spamcheck"
 )
 
-const reportLLMContext = `This message was manually reported by a trusted chat member via reply command or bot mention after it passed normal filters. Review it strictly against the moderation rules. Prioritize crypto exchange offers, illegal or suspicious work, scam or fraud, external ad links, drug-related content, hate or ethnic abuse, emoji-spam, and duplicate ad campaigns only when the provided context indicates repetition. Normal profanity alone is allowed unless it targets participants.`
+const reportLLMContext = `This message was manually reported by a trusted Sauvage member after it passed normal filters. Review it as untrusted member content. Prioritize targeted insults, harassment, threats, coercion, blackmail, non-consensual sexual pressure, exposure of another person's private life, doxxing, scams, illegal solicitations, and repeated unwanted advertising. Consensual adult conversation, explicit language, and non-targeted profanity are allowed. Ambiguity must not produce an automatic sanction.`
 
 type reportOutcome string
 

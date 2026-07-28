@@ -1,0 +1,7 @@
+<!DOCTYPE html><html lang="es"><head><title>Presentaciones - Sauvage</title>{{template "heads.html"}}</head>
+<body x-data="{ navOpen:false }">{{template "sidebar.html"}}<main class="main">
+<header class="topbar"><button class="topbar__burger" @click="navOpen=!navOpen"><i class="bi bi-list"></i></button><h2 class="page-title">Presentaciones registradas</h2></header>
+<div class="content"><div class="alert alert-info">Una fila significa que esa persona ya utilizó su única presentación permitida.</div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Usuario</th><th>Primer mensaje</th><th>Tipo</th><th>Fecha</th></tr></thead>
+<tbody>{{range .Records}}<tr><td><a href="/sauvage/activity?user={{.UserID}}">{{.UserID}}</a></td><td>{{.FirstMessageID}}</td><td><code>{{.EntryKey}}</code></td><td>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td></tr>
+{{else}}<tr><td colspan="4" class="center-text muted">Todavía no hay presentaciones registradas</td></tr>{{end}}</tbody></table></div></div></main></body></html>

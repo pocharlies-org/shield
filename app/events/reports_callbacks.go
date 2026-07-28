@@ -330,8 +330,11 @@ func (r *userReports) callbackReportCancel(_ context.Context, query *tbapi.Callb
 }
 
 func (r *userReports) HandleReportCallback(ctx context.Context, query *tbapi.CallbackQuery) error {
-	chatID := query.Message.Chat.ID
-	if chatID != r.adminChatID {
+	authorized, err := authorizeAdminCallback(query, r.adminChatID, r.superUsers)
+	if err != nil {
+		return err
+	}
+	if !authorized {
 		return nil
 	}
 

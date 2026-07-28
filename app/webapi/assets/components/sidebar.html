@@ -4,6 +4,14 @@
         <span class="sidebar__brand-name">Shield</span>
     </div>
     <ul class="sidebar__nav">
+        <li class="nav-section">SAUVAGE</li>
+        <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage' }" href="/sauvage"><i class="bi bi-speedometer2"></i>Resumen</a></li>
+        <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/activity' }" href="/sauvage/activity"><i class="bi bi-activity"></i>Actividad</a></li>
+        <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/presentations' }" href="/sauvage/presentations"><i class="bi bi-person-badge"></i>Presentaciones</a></li>
+        <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/contests' }" href="/sauvage/contests"><i class="bi bi-trophy"></i>Concursos</a></li>
+        <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/users' }" href="/sauvage/users"><i class="bi bi-person-exclamation"></i>Reincidencias</a></li>
+        <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/system' }" href="/sauvage/system"><i class="bi bi-heart-pulse"></i>Sistema</a></li>
+        <li class="nav-section">SHIELD</li>
         <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/' }" href="/"><i class="bi bi-shield-check"></i>Checker</a></li>
         <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/manage_samples' }" href="/manage_samples"><i class="bi bi-collection"></i>Manage Samples</a></li>
         <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/manage_users' }" href="/manage_users"><i class="bi bi-people"></i>Manage Users</a></li>
@@ -16,6 +24,6 @@
     </ul>
     <div class="sidebar__footer">
         <a class="nav-link" href="/download/backup" download><i class="bi bi-download"></i>Create Backup</a>
-        <a class="nav-link" hx-get="/logout" hx-push-url="true"><i class="bi bi-box-arrow-right"></i>Logout</a>
+        <a class="nav-link" href="https://auth-next.e-dani.com/oauth2/sign_out?rd=https%3A%2F%2Fauth-next.e-dani.com%2Frealms%2Fedani%2Fprotocol%2Fopenid-connect%2Flogout"><i class="bi bi-box-arrow-right"></i>Cerrar sesión</a>
     </div>
 </aside>

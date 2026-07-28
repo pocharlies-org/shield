@@ -3,12 +3,12 @@ on:
   push:
     branches:
     tags:
-    paths_ignored:
+    paths-ignore:
       - ".github/workflows/updater.yml"
       - "updater/**"
       - "**.md"
   pull_request:
-    paths_ignored:
+    paths-ignore:
       - ".github/workflows/updater.yml"
       - "updater/**"
       - "**.md"
@@ -22,12 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       with:
         persist-credentials: false
 
     - name: set up go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version: "1.25"
       id: go
@@ -49,20 +49,20 @@ jobs:
         TZ: "America/Chicago"
 
     - name: golangci-lint
-      uses: golangci/golangci-lint-action@v9
+      uses: golangci/golangci-lint-action@db9de0fc1a667e1a49d2291a1a042dff081d78f6 # v9
       with:
-        version: latest
+        version: v2.12.2
 
     - name: golangci-lint on example directory
-      uses: golangci/golangci-lint-action@v9
+      uses: golangci/golangci-lint-action@db9de0fc1a667e1a49d2291a1a042dff081d78f6 # v9
       with:
-        version: latest
+        version: v2.12.2
         args: --config ../../.golangci.yml
         working-directory: _examples/simplechat
 
     - name: submit coverage
       run: |
-        go install github.com/mattn/goveralls@latest
+        go install github.com/mattn/goveralls@v0.0.12
         goveralls -service="github" -coverprofile=$GITHUB_WORKSPACE/profile.cov
       env:
         COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}

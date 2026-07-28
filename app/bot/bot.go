@@ -15,14 +15,15 @@ var PermanentBanDuration = time.Hour * 24 * 400
 
 // Response describes bot's reaction on particular message
 type Response struct {
-	Text          string
-	Send          bool                 // status
-	BanInterval   time.Duration        // bots banning user set the interval
-	User          User                 // user to ban
-	ChannelID     int64                // channel to ban via BanChatSenderChatConfig, if set then User is ignored
-	ReplyTo       int                  // message to reply to, if 0 then no reply but common message
-	DeleteReplyTo bool                 // delete message what bot replays to
-	CheckResults  []spamcheck.Response // check results for the message
+	Text            string
+	Send            bool                 // status
+	MessageThreadID int                  // forum topic for the response, 0 for the main chat
+	BanInterval     time.Duration        // bots banning user set the interval
+	User            User                 // user to ban
+	ChannelID       int64                // channel to ban via BanChatSenderChatConfig, if set then User is ignored
+	ReplyTo         int                  // message to reply to, if 0 then no reply but common message
+	DeleteReplyTo   bool                 // delete message what bot replays to
+	CheckResults    []spamcheck.Response // check results for the message
 }
 
 // SenderChat is the sender of the message, sent on behalf of a chat. The
@@ -39,18 +40,21 @@ type SenderChat struct {
 
 // Message is primary record to pass data from/to bots
 type Message struct {
-	ID         int
-	From       User
-	SenderChat SenderChat `json:"sender_chat,omitzero"`
-	ChatID     int64
-	Sent       time.Time
-	HTML       string    `json:",omitempty"`
-	Text       string    `json:",omitempty"`
-	LLMContext string    `json:"llm_context,omitempty"`
-	ForceLLM   bool      `json:"force_llm,omitempty"`
-	Entities   *[]Entity `json:",omitempty"`
-	Image      *Image    `json:",omitempty"`
-	ReplyTo    struct {
+	ID              int
+	From            User
+	SenderChat      SenderChat `json:"sender_chat,omitzero"`
+	ChatID          int64
+	MessageThreadID int
+	IsTopicMessage  bool
+	MediaGroupID    string
+	Sent            time.Time
+	HTML            string    `json:",omitempty"`
+	Text            string    `json:",omitempty"`
+	LLMContext      string    `json:"llm_context,omitempty"`
+	ForceLLM        bool      `json:"force_llm,omitempty"`
+	Entities        *[]Entity `json:",omitempty"`
+	Image           *Image    `json:",omitempty"`
+	ReplyTo         struct {
 		From       User
 		Text       string `json:",omitempty"`
 		Sent       time.Time

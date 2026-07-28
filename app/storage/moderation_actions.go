@@ -119,6 +119,13 @@ type ModerationActionReplay struct {
 	LastError string
 }
 
+// ModerationActionSummary contains bounded action-journal totals for the dashboard.
+type ModerationActionSummary struct {
+	Total     int `db:"total"`
+	Completed int `db:"completed"`
+	Failed    int `db:"failed"`
+}
+
 // ModerationActions persists executor command attempts.
 type ModerationActions struct {
 	*engine.SQL
@@ -203,6 +210,53 @@ func (m *ModerationActions) ByEventID(ctx context.Context, eventID string) ([]Mo
 		return nil, fmt.Errorf("failed to get moderation actions: %w", err)
 	}
 	return entries, nil
+}
+
+// Recent returns the newest executor attempts for the current tenant.
+func (m *ModerationActions) Recent(ctx context.Context, since time.Time, limit int) ([]ModerationActionEntry, error) {
+	m.RLock()
+	defer m.RUnlock()
+
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	query := `SELECT id, gid, tenant_id, event_id, correlation_id, idempotency_key, command, status,
+		chat_id, subject_id, message_id, attempt, last_error, created_at
+		FROM moderation_actions WHERE tenant_id = ?`
+	args := []any{m.TenantID()}
+	if !since.IsZero() {
+		query += " AND created_at >= ?"
+		args = append(args, since.UTC())
+	}
+	query += " ORDER BY created_at DESC, id DESC LIMIT ?"
+	args = append(args, limit)
+
+	var entries []ModerationActionEntry
+	if err := m.SelectContext(ctx, &entries, m.Adopt(query), args...); err != nil {
+		return nil, fmt.Errorf("list recent moderation actions: %w", err)
+	}
+	return entries, nil
+}
+
+// Summary returns executor attempt totals for the current tenant.
+func (m *ModerationActions) Summary(ctx context.Context, since time.Time) (ModerationActionSummary, error) {
+	m.RLock()
+	defer m.RUnlock()
+
+	query := `SELECT COUNT(*) AS total,
+		COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
+		COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed
+		FROM moderation_actions WHERE tenant_id = ?`
+	args := []any{m.TenantID()}
+	if !since.IsZero() {
+		query += " AND created_at >= ?"
+		args = append(args, since.UTC())
+	}
+	var summary ModerationActionSummary
+	if err := m.GetContext(ctx, &summary, m.Adopt(query), args...); err != nil {
+		return ModerationActionSummary{}, fmt.Errorf("summarize moderation actions: %w", err)
+	}
+	return summary, nil
 }
 
 // Last returns the latest action attempt for the same idempotency key and command target.

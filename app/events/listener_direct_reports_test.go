@@ -442,7 +442,7 @@ func TestTelegramListener_DoWithDirectWarnReport(t *testing.T) {
 	require.Len(t, mockAPI.SendCalls(), 2)
 	assert.Equal(t, "startup", mockAPI.SendCalls()[0].C.(tbapi.MessageConfig).Text)
 	assert.True(t, mockAPI.SendCalls()[0].C.(tbapi.MessageConfig).DisableNotification)
-	assert.Contains(t, mockAPI.SendCalls()[1].C.(tbapi.MessageConfig).Text, "Предупреждение 1/3")
+	assert.Contains(t, mockAPI.SendCalls()[1].C.(tbapi.MessageConfig).Text, "Aviso 1/3")
 	assert.Contains(t, mockAPI.SendCalls()[1].C.(tbapi.MessageConfig).Text, `Не нарушайте правила чата`)
 
 	require.Empty(t, b.OnMessageCalls())

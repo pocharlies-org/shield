@@ -166,7 +166,7 @@ func TestTelegramListener_LinkedChannelBanSpam(t *testing.T) {
 				var foundWarn bool
 				for _, call := range mockAPI.SendCalls() {
 					mc := call.C.(tbapi.MessageConfig)
-					if strings.Contains(mc.Text, "Предупреждение 1/3") && strings.Contains(mc.Text, "Не нарушайте правила чата") {
+					if strings.Contains(mc.Text, "Aviso 1/3") && strings.Contains(mc.Text, "Не нарушайте правила чата") {
 						foundWarn = true
 					}
 				}

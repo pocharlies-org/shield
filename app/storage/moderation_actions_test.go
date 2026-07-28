@@ -56,6 +56,17 @@ func TestModerationActionsAdd(t *testing.T) {
 	assert.Equal(t, "delete_message", entries[1].Command)
 	assert.Equal(t, "failed", entries[1].Status)
 	assert.Equal(t, "message not found", entries[1].LastError)
+
+	recent, err := store.Recent(context.Background(), time.Date(2026, 4, 22, 11, 0, 0, 0, time.UTC), 10)
+	require.NoError(t, err)
+	require.Len(t, recent, 2)
+	assert.Equal(t, "delete_message", recent[0].Command)
+
+	summary, err := store.Summary(context.Background(), time.Date(2026, 4, 22, 11, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	assert.Equal(t, 2, summary.Total)
+	assert.Equal(t, 1, summary.Completed)
+	assert.Equal(t, 1, summary.Failed)
 }
 
 func TestModerationActionsLast(t *testing.T) {

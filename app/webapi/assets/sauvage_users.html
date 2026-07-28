@@ -1,0 +1,7 @@
+<!DOCTYPE html><html lang="es"><head><title>Reincidencias - Sauvage</title>{{template "heads.html"}}</head>
+<body x-data="{ navOpen:false }">{{template "sidebar.html"}}<main class="main">
+<header class="topbar"><button class="topbar__burger" @click="navOpen=!navOpen"><i class="bi bi-list"></i></button><h2 class="page-title">Reincidencias activas</h2></header>
+<div class="content"><div class="alert alert-warn">Los eventos observados en dry-run no incrementan esta tabla. Aquí solo aparecen strikes reales.</div>
+<div class="table-wrap"><table class="table"><thead><tr><th>Usuario</th><th>Regla</th><th>Strikes</th><th>Última actualización</th><th>Actividad</th></tr></thead>
+<tbody>{{range .Records}}<tr><td>{{.UserID}}</td><td><code>{{.RuleCode}}</code></td><td><span class="badge {{if ge .Strikes 4}}badge-spam{{else}}badge-warn{{end}}">{{.Strikes}}</span></td><td>{{.UpdatedAt.Format "2006-01-02 15:04:05"}}</td><td><a href="/sauvage/activity?user={{.UserID}}">Ver historial</a></td></tr>
+{{else}}<tr><td colspan="5" class="center-text muted">No hay reincidencias reales</td></tr>{{end}}</tbody></table></div></div></main></body></html>

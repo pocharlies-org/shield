@@ -301,13 +301,13 @@ func reportStatusText(duration time.Duration, restrict, dry bool) string {
 			if dry {
 				return "Репорт подтвержден. DRY mode: пользователь был бы ограничен."
 			}
-			return "Репорт подтвержден. Пользователь ограничен."
+			return "Reporte confirmado. La cuenta ha sido restringida."
 		}
 	}
 	if dry {
 		return "Репорт подтвержден. DRY mode: пользователь был бы забанен."
 	}
-	return "Репорт подтвержден. Пользователь забанен."
+	return "Reporte confirmado. La cuenta ha sido expulsada."
 }
 
 // transform converts telegram message to internal message format.
@@ -351,10 +351,13 @@ func transform(msg *tbapi.Message) *bot.Message {
 
 	// initialize message with basic fields
 	message := bot.Message{
-		ID:     msg.MessageID,
-		Sent:   msg.Time(),
-		Text:   msg.Text,
-		ChatID: msg.Chat.ID,
+		ID:              msg.MessageID,
+		Sent:            msg.Time(),
+		Text:            msg.Text,
+		ChatID:          msg.Chat.ID,
+		MessageThreadID: msg.MessageThreadID,
+		IsTopicMessage:  msg.IsTopicMessage,
+		MediaGroupID:    msg.MediaGroupID,
 	}
 
 	// set sender info

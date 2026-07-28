@@ -107,7 +107,7 @@ func TestAdmin_reportBanIncludesSlowpathReason(t *testing.T) {
 
 	require.Len(t, mockAPI.SendCalls(), 1)
 	sentText := mockAPI.SendCalls()[0].C.(tbapi.MessageConfig).Text
-	assert.Contains(t, sentText, "Причина: vision spam reason")
+	assert.Contains(t, sentText, "Motivo: vision spam reason")
 }
 
 func TestAdmin_reportWarnNoUsernameUsesFirstNameAndID(t *testing.T) {
@@ -178,7 +178,7 @@ func TestAdmin_reportWarnIncludesSlowpathReason(t *testing.T) {
 
 	require.Len(t, mockAPI.SendCalls(), 1)
 	sentText := mockAPI.SendCalls()[0].C.(tbapi.MessageConfig).Text
-	assert.Contains(t, sentText, "Причина: vision spam reason")
+	assert.Contains(t, sentText, "Motivo: vision spam reason")
 }
 
 func TestAdmin_reportWarnAddsNotSpamButton(t *testing.T) {

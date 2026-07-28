@@ -17,14 +17,19 @@ import (
 )
 
 func (a *admin) InlineCallbackHandler(ctx context.Context, query *tbapi.CallbackQuery) error {
-	callbackData := query.Data
-	chatID := query.Message.Chat.ID
-	if chatID != a.adminChatID {
+	authorized, err := authorizeAdminCallback(query, a.adminChatID, a.superUsers)
+	if err != nil {
+		return err
+	}
+	if !authorized {
 		return nil
 	}
 
+	callbackData := query.Data
+	chatID := query.Message.Chat.ID
+
 	if strings.HasPrefix(callbackData, confirmationPrefix) {
-		if err := a.callbackAskBanConfirmation(query); err != nil {
+		if err = a.callbackAskBanConfirmation(query); err != nil {
 			return fmt.Errorf("failed to make ban confirmation dialog: %w", err)
 		}
 		log.Printf("[DEBUG] unban confirmation request sent, chatID: %d, userID: %s, orig: %q",
@@ -450,7 +455,8 @@ func (a *admin) getCleanWarningMessage(msg string) (string, error) {
 	endLine := len(msgLines)
 	for i, line := range msgLines[2:] {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Причина:") || strings.HasPrefix(trimmed, "ham подтвержден") ||
+		if strings.HasPrefix(trimmed, "Причина:") || strings.HasPrefix(trimmed, "Motivo:") ||
+			strings.HasPrefix(trimmed, "ham подтвержден") ||
 			strings.HasPrefix(trimmed, "spam detection results") || strings.HasPrefix(trimmed, "**spam detection results**") {
 			endLine = i + 2
 			break

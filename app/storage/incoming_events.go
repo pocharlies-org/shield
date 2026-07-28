@@ -27,6 +27,8 @@ const (
 	CmdAddProcessedAtColumn
 	CmdCompleteIncomingEvent
 	CmdAddIncomingEventsTenantIDColumn
+	CmdAddIncomingEventsThreadIDColumn
+	CmdAddIncomingEventsMediaGroupIDColumn
 )
 
 var incomingEventsQueries = engine.NewQueryMap().
@@ -40,6 +42,8 @@ var incomingEventsQueries = engine.NewQueryMap().
 			source TEXT NOT NULL,
 			update_id INTEGER NOT NULL DEFAULT 0,
 			chat_id INTEGER NOT NULL,
+			message_thread_id INTEGER NOT NULL DEFAULT 0,
+			media_group_id TEXT NOT NULL DEFAULT '',
 			message_id INTEGER NOT NULL DEFAULT 0,
 			edited_message_id INTEGER NOT NULL DEFAULT 0,
 			idempotency_key TEXT NOT NULL,
@@ -62,6 +66,8 @@ var incomingEventsQueries = engine.NewQueryMap().
 			source TEXT NOT NULL,
 			update_id INTEGER NOT NULL DEFAULT 0,
 			chat_id BIGINT NOT NULL,
+			message_thread_id INTEGER NOT NULL DEFAULT 0,
+			media_group_id TEXT NOT NULL DEFAULT '',
 			message_id INTEGER NOT NULL DEFAULT 0,
 			edited_message_id INTEGER NOT NULL DEFAULT 0,
 			idempotency_key TEXT NOT NULL,
@@ -81,20 +87,25 @@ var incomingEventsQueries = engine.NewQueryMap().
 		CREATE INDEX IF NOT EXISTS idx_incoming_events_gid_received ON incoming_events(gid, received_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_incoming_events_gid_event ON incoming_events(gid, event_id);
 		CREATE INDEX IF NOT EXISTS idx_incoming_events_tenant_id ON incoming_events(tenant_id);
+		CREATE INDEX IF NOT EXISTS idx_incoming_events_topic ON incoming_events(tenant_id, chat_id, message_thread_id);
+		CREATE INDEX IF NOT EXISTS idx_incoming_events_media_group ON incoming_events(tenant_id, chat_id, media_group_id);
 	`).
 	Add(CmdAddIncomingEvent, engine.Query{
 		Sqlite: `INSERT OR IGNORE INTO incoming_events
-			(gid, event_id, correlation_id, tenant_id, source, update_id, chat_id, message_id, edited_message_id,
+			(gid, event_id, correlation_id, tenant_id, source, update_id, chat_id, message_thread_id, media_group_id,
+			 message_id, edited_message_id,
 			 idempotency_key, received_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		Postgres: `INSERT INTO incoming_events
-			(gid, event_id, correlation_id, tenant_id, source, update_id, chat_id, message_id, edited_message_id,
+			(gid, event_id, correlation_id, tenant_id, source, update_id, chat_id, message_thread_id, media_group_id,
+			 message_id, edited_message_id,
 			 idempotency_key, received_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			ON CONFLICT (tenant_id, idempotency_key) DO NOTHING`,
 	}).
 	AddSame(CmdGetIncomingEventByKey, `SELECT
-			id, gid, event_id, correlation_id, tenant_id, source, update_id, chat_id, message_id,
+			id, gid, event_id, correlation_id, tenant_id, source, update_id, chat_id,
+			message_thread_id, media_group_id, message_id,
 			edited_message_id, idempotency_key, decision_action, decision_reason, decision_score,
 			action_applied, action_error, processed_at, received_at, created_at
 		FROM incoming_events
@@ -129,6 +140,14 @@ var incomingEventsQueries = engine.NewQueryMap().
 	Add(CmdAddIncomingEventsTenantIDColumn, engine.Query{
 		Sqlite:   "ALTER TABLE incoming_events ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''",
 		Postgres: "ALTER TABLE incoming_events ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT ''",
+	}).
+	Add(CmdAddIncomingEventsThreadIDColumn, engine.Query{
+		Sqlite:   "ALTER TABLE incoming_events ADD COLUMN message_thread_id INTEGER NOT NULL DEFAULT 0",
+		Postgres: "ALTER TABLE incoming_events ADD COLUMN IF NOT EXISTS message_thread_id INTEGER NOT NULL DEFAULT 0",
+	}).
+	Add(CmdAddIncomingEventsMediaGroupIDColumn, engine.Query{
+		Sqlite:   "ALTER TABLE incoming_events ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''",
+		Postgres: "ALTER TABLE incoming_events ADD COLUMN IF NOT EXISTS media_group_id TEXT NOT NULL DEFAULT ''",
 	})
 
 // IncomingEventRecord stores one normalized Telegram ingress event.
@@ -141,6 +160,8 @@ type IncomingEventRecord struct {
 	Source          string       `db:"source"`
 	UpdateID        int          `db:"update_id"`
 	ChatID          int64        `db:"chat_id"`
+	MessageThreadID int          `db:"message_thread_id"`
+	MediaGroupID    string       `db:"media_group_id"`
 	MessageID       int          `db:"message_id"`
 	EditedMessageID int          `db:"edited_message_id"`
 	IdempotencyKey  string       `db:"idempotency_key"`
@@ -210,6 +231,15 @@ func (s *IncomingEvents) migrate(ctx context.Context, tx *sqlx.Tx, _ string) err
 	}
 
 	migrateTenantID(ctx, tx, s.Type(), "incoming_events")
+	for _, cmd := range []engine.DBCmd{CmdAddIncomingEventsThreadIDColumn, CmdAddIncomingEventsMediaGroupIDColumn} {
+		query, pickErr := incomingEventsQueries.Pick(s.Type(), cmd)
+		if pickErr != nil {
+			return fmt.Errorf("failed to get topic migration query %d: %w", cmd, pickErr)
+		}
+		if _, execErr := tx.ExecContext(ctx, query); execErr != nil && !strings.Contains(execErr.Error(), "duplicate column") {
+			return fmt.Errorf("failed to apply topic migration %d: %w", cmd, execErr)
+		}
+	}
 
 	return nil
 }
@@ -243,6 +273,8 @@ func (s *IncomingEvents) Record(ctx context.Context, event moderation.IncomingEv
 		event.Source,
 		event.UpdateID,
 		event.ChatID,
+		event.MessageThreadID,
+		event.MediaGroupID,
 		event.MessageID,
 		event.EditedMessageID,
 		event.IdempotencyKey,
@@ -278,7 +310,9 @@ func (s *IncomingEvents) Reserve(ctx context.Context, event moderation.IncomingE
 		Recorded:  false,
 		Processed: record.ProcessedAt.Valid,
 	}
-	if !record.ProcessedAt.Valid && (record.DecisionAction != "" || record.ActionError != "" || record.ActionApplied.Valid) {
+	if !record.ProcessedAt.Valid {
+		// polling is single-consumer, so an unfinished row is safe to reclaim after
+		// Telegram redelivers it following a process restart.
 		replay.Recorded = true
 	}
 	if record.ProcessedAt.Valid {

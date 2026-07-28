@@ -132,24 +132,34 @@ func TestParseLLMResponse(t *testing.T) {
 			want:  llmResponse{IsSpam: true, Reason: "bad text", Confidence: 91},
 		},
 		{
-			name:  "wrapped json object",
-			input: `Answer: {"spam": false, "reason":"ok", "confidence":42} done`,
-			want:  llmResponse{IsSpam: false, Reason: "ok", Confidence: 42},
+			name:    "wrapped json object",
+			input:   `Answer: {"spam": false, "reason":"ok", "confidence":42} done`,
+			wantErr: "decode strict LLM response",
 		},
 		{
-			name:  "trailing comma json",
-			input: `{"spam": true, "reason":"bad text", "confidence":91,}`,
-			want:  llmResponse{IsSpam: true, Reason: "bad text", Confidence: 91},
+			name:    "trailing comma json",
+			input:   `{"spam": true, "reason":"bad text", "confidence":91,}`,
+			wantErr: "decode strict LLM response",
 		},
 		{
-			name:  "fallback field parse",
-			input: `spam: true, reason: "job scam", confidence: 95`,
-			want:  llmResponse{IsSpam: true, Reason: "job scam", Confidence: 95},
+			name:    "fallback field parse",
+			input:   `spam: true, reason: "job scam", confidence: 95`,
+			wantErr: "decode strict LLM response",
 		},
 		{
 			name:    "invalid content",
 			input:   `nonsense`,
-			wantErr: "can't unmarshal response: nonsense",
+			wantErr: "decode strict LLM response",
+		},
+		{
+			name:    "missing fields",
+			input:   `{"spam":true}`,
+			wantErr: "spam, reason, and confidence are required",
+		},
+		{
+			name:    "low confidence spam",
+			input:   `{"spam":true,"reason":"uncertain","confidence":80}`,
+			wantErr: "spam decision requires confidence above 80",
 		},
 	}
 
@@ -158,7 +168,7 @@ func TestParseLLMResponse(t *testing.T) {
 			got, err := parseLLMResponse(tt.input)
 			if tt.wantErr != "" {
 				require.Error(t, err)
-				assert.EqualError(t, err, tt.wantErr)
+				assert.Contains(t, err.Error(), tt.wantErr)
 				return
 			}
 			require.NoError(t, err)

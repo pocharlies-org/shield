@@ -45,6 +45,19 @@ func TestMergeSlowOverridesToSpam(t *testing.T) {
 	assert.Equal(t, "openai", merged.Signals[1].Name)
 }
 
+func TestMergeSlowLowConfidenceSpamCannotOverride(t *testing.T) {
+	fast := DetectionResult{Spam: false, Score: 0.2}
+	slow := &SlowPathResult{
+		Spam:       true,
+		Confidence: 80,
+		Final:      true,
+		Signals:    []ProviderResult{{Spam: true, Confidence: 80, Provider: "openai"}},
+	}
+	merged := MergeResults(fast, slow)
+	assert.False(t, merged.Spam)
+	assert.InDelta(t, fast.Score, merged.Score, 1e-9)
+}
+
 func TestMergeSlowConfirmsHam(t *testing.T) {
 	fast := DetectionResult{
 		Spam:  false,

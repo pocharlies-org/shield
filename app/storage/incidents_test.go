@@ -1,11 +1,53 @@
 package storage
 
 import (
+	"context"
 	"fmt"
+	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/redstone-md/shield/app/audit"
+	"github.com/redstone-md/shield/app/storage/engine"
 )
+
+func TestIncidentDashboardSummary(t *testing.T) {
+	ctx := context.Background()
+	db, err := engine.NewSqlite(":memory:", "sauvage")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	store, err := NewIncidentStorage(ctx, db)
+	require.NoError(t, err)
+
+	cases := []audit.Incident{
+		{
+			Source: audit.SourceAutoMod, Status: audit.IncidentStatusOpen, Severity: audit.SeverityCritical,
+			IdempotencyKey: "dashboard-llm", ReasonCode: audit.ReasonLLMOpenAI,
+		},
+		{
+			Source: audit.SourceUserReport, Status: audit.IncidentStatusReviewing, Severity: audit.SeverityHigh,
+			IdempotencyKey: "dashboard-report", ReasonCode: audit.ReasonUserReport,
+		},
+		{
+			Source: audit.SourceAutoMod, Status: audit.IncidentStatusResolved, Severity: audit.SeverityMedium,
+			IdempotencyKey: "dashboard-resolved", ReasonCode: audit.ReasonRegexMatch,
+		},
+	}
+	for _, incident := range cases {
+		_, err = store.Create(ctx, incident)
+		require.NoError(t, err)
+	}
+
+	summary, err := store.DashboardSummary(ctx, time.Now().Add(-time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 3, summary.Total)
+	require.Equal(t, 2, summary.Open)
+	require.Equal(t, 1, summary.Resolved)
+	require.Equal(t, 1, summary.Critical)
+	require.Equal(t, 1, summary.LLM)
+	require.Equal(t, 1, summary.UserReports)
+}
 
 func (s *StorageTestSuite) TestIncidents_CreateAndGet() {
 	ctx := s.T().Context()

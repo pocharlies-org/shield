@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/go-pkgz/lgr"
 	"github.com/jessevdk/go-flags"
 
+	"github.com/redstone-md/shield/app/community"
 	"github.com/redstone-md/shield/app/events"
 )
 
@@ -56,7 +59,7 @@ type options struct {
 	} `group:"delete" namespace:"delete" env-namespace:"DELETE"`
 
 	CAS struct {
-		API       string        `long:"api" env:"API" default:"https://api.cas.chat" description:"CAS API"`
+		API       string        `long:"api" env:"API" description:"CAS API (disabled when empty)"`
 		Timeout   time.Duration `long:"timeout" env:"TIMEOUT" default:"5s" description:"CAS timeout"`
 		UserAgent string        `long:"user-agent" env:"USER_AGENT" description:"User-Agent header for CAS API requests"`
 	} `group:"cas" namespace:"cas" env-namespace:"CAS"`
@@ -151,6 +154,21 @@ type options struct {
 		RatePeriod       time.Duration `long:"rate-period" env:"RATE_PERIOD" default:"1m" description:"rate limit time period"`
 	} `group:"report" namespace:"report" env-namespace:"REPORT"`
 
+	Community struct {
+		Enabled                    bool     `long:"enabled" env:"ENABLED" description:"enable deterministic community topic rules"`
+		ChatID                     int64    `long:"chat-id" env:"CHAT_ID" description:"Telegram forum chat id for community rules"`
+		PresentationThreadID       int      `long:"presentation-thread-id" env:"PRESENTATION_THREAD_ID" default:"3" description:"presentations topic id"`
+		ContestThreadID            int      `long:"contest-thread-id" env:"CONTEST_THREAD_ID" default:"6" description:"contest topic id"`
+		ContestID                  string   `long:"contest-id" env:"CONTEST_ID" description:"stable id for the active contest; change it for every new contest"`
+		ApplyActions               bool     `long:"apply-actions" env:"APPLY_ACTIONS" description:"apply community-rule actions; disabled means shadow mode"`
+		AllowEmptyPresentationText bool     `long:"allow-empty-presentation-text" env:"ALLOW_EMPTY_PRESENTATION_TEXT" description:"allow a single-photo presentation without caption text"`
+		PrivateConsentTerms        []string `long:"private-consent-term" env:"PRIVATE_CONSENT_TERMS" env-delim:"," description:"accepted phrases that state private-message consent"`
+		DailyDigestEnabled         bool     `long:"daily-digest" env:"DAILY_DIGEST" description:"send a daily privacy-preserving summary to the admin chat"`
+		DailyDigestHour            int      `long:"daily-digest-hour" env:"DAILY_DIGEST_HOUR" default:"9" description:"local hour for the daily digest"`
+		DailyDigestTimezone        string   `long:"daily-digest-timezone" env:"DAILY_DIGEST_TIMEZONE" default:"Europe/Madrid" description:"IANA timezone for the daily digest"`
+		DashboardURL               string   `long:"dashboard-url" env:"DASHBOARD_URL" description:"dashboard link included in the daily digest"`
+	} `group:"community" namespace:"community" env-namespace:"COMMUNITY"`
+
 	Files struct {
 		SamplesDataPath string        `long:"samples" env:"SAMPLES" description:"samples data path, defaults to dynamic data path"`
 		DynamicDataPath string        `long:"dynamic" env:"DYNAMIC" default:"data" description:"dynamic data path"`
@@ -180,11 +198,14 @@ type options struct {
 	} `group:"message" namespace:"message" env-namespace:"MESSAGE"`
 
 	Server struct {
-		Enabled         bool   `long:"enabled" env:"ENABLED" description:"enable web server"`
-		ListenAddr      string `long:"listen" env:"LISTEN" default:":8080" description:"listen address"`
-		ProbeListenAddr string `long:"probe-listen" env:"PROBE_LISTEN" default:"" description:"listen address for runtime health/readiness probes"`
-		AuthPasswd      string `long:"auth" env:"AUTH" default:"auto" description:"basic auth password for user 'tg-spam'"`
-		AuthHash        string `long:"auth-hash" env:"AUTH_HASH" default:"" description:"basic auth password hash for user 'tg-spam'"`
+		Enabled               bool     `long:"enabled" env:"ENABLED" description:"enable web server"`
+		ListenAddr            string   `long:"listen" env:"LISTEN" default:":8080" description:"listen address"`
+		ProbeListenAddr       string   `long:"probe-listen" env:"PROBE_LISTEN" default:"" description:"listen address for runtime health/readiness probes"`
+		AuthPasswd            string   `long:"auth" env:"AUTH" default:"auto" description:"basic auth password for user 'tg-spam'"`
+		AuthHash              string   `long:"auth-hash" env:"AUTH_HASH" default:"" description:"basic auth password hash for user 'tg-spam'"`
+		ForwardAuthHeader     string   `long:"forward-auth-header" env:"FORWARD_AUTH_HEADER" default:"X-Auth-Request-Email" description:"trusted proxy header containing the authenticated email"`
+		ForwardAuthEmails     []string `long:"forward-auth-email" env:"FORWARD_AUTH_EMAILS" env-delim:"," description:"exact email allowlist for trusted forward auth"`
+		ForwardAuthProxyCIDRs []string `long:"forward-auth-proxy-cidr" env:"FORWARD_AUTH_PROXY_CIDRS" env-delim:"," description:"source CIDRs allowed to assert forward-auth identity"`
 	} `group:"server" namespace:"server" env-namespace:"SERVER"`
 
 	Training bool `long:"training" env:"TRAINING" description:"training mode, passive spam detection only"`
@@ -203,6 +224,7 @@ type options struct {
 		DetectedSpamTTL      time.Duration `long:"detected-spam-ttl" env:"DETECTED_SPAM_TTL" default:"720h" description:"time-to-live for detected spam entries (0=keep forever)"`
 		IncomingEventsTTL    time.Duration `long:"incoming-events-ttl" env:"INCOMING_EVENTS_TTL" default:"168h" description:"time-to-live for incoming events (0=keep forever)"`
 		ModerationActionsTTL time.Duration `long:"moderation-actions-ttl" env:"MODERATION_ACTIONS_TTL" default:"720h" description:"time-to-live for moderation actions (0=keep forever)"`
+		CommunityEventsTTL   time.Duration `long:"community-events-ttl" env:"COMMUNITY_EVENTS_TTL" default:"0" description:"time-to-live for community rule event history (0=keep forever)"`
 		LabelsTTL            time.Duration `long:"labels-ttl" env:"LABELS_TTL" default:"720h" description:"time-to-live for feedback labels (0=keep forever)"`
 		CandidatesTTL        time.Duration `long:"candidates-ttl" env:"CANDIDATES_TTL" default:"720h" description:"time-to-live for review candidates (0=keep forever)"`
 		UsageCountersTTL     time.Duration `long:"usage-counters-ttl" env:"USAGE_COUNTERS_TTL" default:"168h" description:"time-to-live for usage counter windows (0=keep forever)"`
@@ -245,7 +267,10 @@ func main() {
 		os.Exit(2)
 	}
 
-	masked := []string{opts.Telegram.Token, opts.OpenAI.Token, opts.Gemini.Token}
+	masked := []string{
+		opts.Telegram.Token, opts.OpenAI.Token, opts.Gemini.Token,
+		opts.DataBaseURL, opts.CAS.API, opts.CAS.UserAgent,
+	}
 	if opts.Server.AuthPasswd != "auto" && opts.Server.AuthPasswd != "" {
 		// auto passwd should not be masked as we print it
 		masked = append(masked, opts.Server.AuthPasswd)
@@ -344,6 +369,21 @@ func execute(ctx context.Context, opts options) error {
 	tbAPI.Debug = opts.TGDbg
 
 	tgListener := assembly.makeTelegramListener(opts, tbAPI)
+	if opts.Community.DailyDigestEnabled && assembly.CommunityStore != nil {
+		adminChatID, parseErr := strconv.ParseInt(strings.TrimSpace(opts.AdminGroup), 10, 64)
+		if parseErr != nil || adminChatID == 0 {
+			return fmt.Errorf("community daily digest requires ADMIN_GROUP as a numeric Telegram chat id")
+		}
+		digest, digestErr := community.NewDigest(
+			assembly.CommunityStore, assembly.ModerationActionsStore, assembly.Web.IncidentDashboard,
+			tbAPI, adminChatID,
+			opts.Community.DailyDigestHour, opts.Community.DailyDigestTimezone, opts.Community.DashboardURL,
+		)
+		if digestErr != nil {
+			return digestErr
+		}
+		go digest.Run(ctx)
+	}
 	logListenerConfig(tgListener)
 	assembly.wireLiveReload(opts)
 
@@ -353,7 +393,9 @@ func execute(ctx context.Context, opts options) error {
 			return fmt.Errorf("can't activate web server, %w", srvErr)
 		}
 	}
-	runtimeProbe.SetReady(true)
+	tgListener.OnReady = func() {
+		runtimeProbe.SetReady(true)
+	}
 
 	// run telegram listener and event processor loop
 	if err := tgListener.Do(ctx); err != nil { //nolint:staticcheck // do() runs infinite loop, always returns error on exit

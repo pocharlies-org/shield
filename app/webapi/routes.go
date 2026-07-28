@@ -105,6 +105,12 @@ func (s *Server) setupAPIRoutes(router *routegroup.Bundle) {
 		if s.MetricsCollector != nil {
 			authApi.HandleFunc("GET /api/metrics", s.metricsHandler)
 		}
+		if s.CommunityDashboard != nil && s.ModerationActions != nil && s.IncidentDashboard != nil {
+			authApi.HandleFunc("GET /api/sauvage/summary", s.sauvageSummaryAPIHandler)
+			authApi.HandleFunc("GET /api/sauvage/events", s.sauvageEventsAPIHandler)
+			authApi.HandleFunc("GET /api/sauvage/actions", s.sauvageActionsAPIHandler)
+			authApi.HandleFunc("GET /api/sauvage/export.csv", s.sauvageCSVHandler)
+		}
 		if s.OnboardingProvider != nil || s.RestoreProvider != nil {
 			authApi.Mount("/api/tenants").Route(func(r *routegroup.Bundle) {
 				if s.OnboardingProvider != nil {
@@ -138,6 +144,15 @@ func (s *Server) setupWebUIRoutes(router *routegroup.Bundle) {
 			webUI.HandleFunc("GET /incidents/{id}", s.htmlIncidentDetailHandler)
 			webUI.HandleFunc("GET /appeals", s.htmlAppealsHandler)
 			webUI.HandleFunc("GET /feedback", s.htmlFeedbackHandler)
+		}
+		if s.CommunityDashboard != nil && s.ModerationActions != nil && s.IncidentDashboard != nil {
+			webUI.HandleFunc("GET /sauvage", s.htmlSauvageOverviewHandler)
+			webUI.HandleFunc("GET /sauvage/activity", s.htmlSauvageActivityHandler)
+			webUI.HandleFunc("GET /sauvage/presentations", s.htmlSauvagePresentationsHandler)
+			webUI.HandleFunc("GET /sauvage/contests", s.htmlSauvageContestsHandler)
+			webUI.HandleFunc("GET /sauvage/users", s.htmlSauvageUsersHandler)
+			webUI.HandleFunc("GET /sauvage/system", s.htmlSauvageSystemHandler)
+			webUI.HandleFunc("GET /sauvage/export.csv", s.sauvageCSVHandler)
 		}
 
 		webUI.HandleFunc("GET /logout", func(w http.ResponseWriter, _ *http.Request) {

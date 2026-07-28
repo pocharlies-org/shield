@@ -130,9 +130,9 @@ func TestOpenAIAdapterBrokenJSON(t *testing.T) {
 		},
 	}
 	a := NewOpenAIAdapter(mock, "gpt-4o", 1024, 8192)
-	result, err := a.Check(context.Background(), ProviderRequest{Message: "test"})
-	require.NoError(t, err)
-	assert.True(t, result.Spam)
+	_, err := a.Check(context.Background(), ProviderRequest{Message: "test"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "strict LLM response")
 }
 
 func TestOpenAIAdapterAPIError(t *testing.T) {
@@ -144,6 +144,15 @@ func TestOpenAIAdapterAPIError(t *testing.T) {
 	a := NewOpenAIAdapter(mock, "gpt-4o", 1024, 8192)
 	_, err := a.Check(context.Background(), ProviderRequest{Message: "test"})
 	assert.Error(t, err)
+}
+
+func TestDefaultSlowPathPromptsMatchSauvagePolicy(t *testing.T) {
+	assert.Contains(t, defaultSystemPrompt, "Spanish-speaking adult")
+	assert.Contains(t, defaultSystemPrompt, "another person's private life")
+	assert.Contains(t, defaultSystemPrompt, "untrusted content")
+	assert.Contains(t, defaultSystemPrompt, "confidence is above 80")
+	assert.Contains(t, defaultVisionPrompt, "without consent")
+	assert.Contains(t, defaultVisionPrompt, "not a violation by itself")
 }
 
 func TestOpenAIAdapterAnalyzeImageSendsMultimodalContent(t *testing.T) {

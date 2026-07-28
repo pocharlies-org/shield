@@ -40,18 +40,15 @@ func NewInMemoryQueue(buffer int) *InMemoryQueue {
 // Publish enqueues an event or returns when the context or queue closes.
 func (q *InMemoryQueue) Publish(ctx context.Context, event IncomingEvent) error {
 	q.mu.RLock()
-	closed := q.closed
-	done := q.done
-	q.mu.RUnlock()
-
-	if closed {
+	defer q.mu.RUnlock()
+	if q.closed {
 		return ErrQueueClosed
 	}
 
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-done:
+	case <-q.done:
 		return ErrQueueClosed
 	case q.ch <- event:
 		return nil
@@ -66,9 +63,9 @@ func (q *InMemoryQueue) Consume() <-chan IncomingEvent {
 // Close stops the queue and closes the consumer stream.
 func (q *InMemoryQueue) Close() {
 	q.once.Do(func() {
+		close(q.done)
 		q.mu.Lock()
 		q.closed = true
-		close(q.done)
 		close(q.ch)
 		q.mu.Unlock()
 	})
