@@ -5,6 +5,7 @@ import (
 	"github.com/redstone-md/shield/lib/tgspam/mocks"
 	"github.com/sashabaranov/go-openai"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"testing"
 	"unicode/utf8"
 )
@@ -78,7 +79,7 @@ func TestRequireModerationCategoryFailsOpen(t *testing.T) {
 
 	spam, details := checker.check(context.Background(), "mensaje ambiguo", llmContext{})
 	assert.False(t, spam)
-	assert.Error(t, details.Error)
+	require.Error(t, details.Error)
 	assert.Contains(t, details.Details, "allowed moderation category")
 
 	response = `{"spam":true,"reason":"INSULT: insulto dirigido","confidence":95}`
