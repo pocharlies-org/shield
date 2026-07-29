@@ -42,6 +42,7 @@ import (
 var templateFS embed.FS
 var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"dict": templateDict, "topicName": topicName, "telegramMessageURL": telegramMessageURL,
+	"hasPrefix": strings.HasPrefix,
 }).
 	ParseFS(templateFS, "assets/*.html", "assets/components/*.html"))
 
@@ -142,6 +143,8 @@ type CommunityDashboardProvider interface {
 	ListPresentations(ctx context.Context, limit int) ([]community.PresentationRecord, error)
 	ListContestEntries(ctx context.Context, contestID string, limit int) ([]community.ContestEntryRecord, error)
 	ListViolations(ctx context.Context, limit int) ([]community.ViolationRecord, error)
+	ListMembers(ctx context.Context, filter community.MemberFilter) ([]community.MemberRecord, error)
+	ListUserReports(ctx context.Context, filter community.UserReportFilter) ([]community.UserReportRecord, error)
 }
 
 // IncomingEventsProvider exposes aggregate normalized Telegram ingress data.

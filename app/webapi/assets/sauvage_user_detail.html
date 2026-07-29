@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><title>Ficha de usuario - Sauvage</title>{{template "heads.html"}}</head>
+<body x-data="{ navOpen:false }">
+{{template "sidebar.html"}}
+<main class="main">
+<header class="topbar">
+    <button class="topbar__burger" @click="navOpen=!navOpen"><i class="bi bi-list"></i></button>
+    <h2 class="page-title">Ficha de usuario</h2>
+</header>
+<div class="content content-wide">
+    <p><a href="/sauvage/users"><i class="bi bi-arrow-left"></i> Volver a usuarios</a></p>
+    <section class="panel">
+        <h3>{{if .Member.DisplayName}}{{.Member.DisplayName}}{{else}}Usuario {{.Member.UserID}}{{end}}</h3>
+        {{if .Member.UserName}}<p>@{{.Member.UserName}}</p>{{end}}
+        <div class="settings-grid">
+            <div><span>ID Telegram</span><code>{{.Member.UserID}}</code></div>
+            <div><span>Presentación</span>{{if .Member.HasPresentation}}<a href="{{telegramMessageURL .Member.ChatID .Member.PresentationThreadID .Member.PresentationMessageID}}" target="_blank" rel="noreferrer">Sí, abrir presentación</a>{{else}}<span>No consta</span>{{end}}</div>
+            <div><span>Último mensaje observado</span><a href="{{telegramMessageURL .Member.ChatID .Member.LastThreadID .Member.LastMessageID}}" target="_blank" rel="noreferrer">{{.Member.LastMessageAt.Format "2006-01-02 15:04:05"}}</a></div>
+            <div><span>Topic del último mensaje</span><span>{{topicName .Member.LastThreadID}}</span></div>
+            <div><span>Reportes recibidos</span><strong>{{.Member.ReportCount}}</strong></div>
+            <div><span>Avisos observados</span><strong>{{.Member.WarningCount}}</strong></div>
+        </div>
+    </section>
+
+    <h3>Reportes sobre esta persona</h3>
+    <div class="table-wrap"><table class="table">
+        <thead><tr><th>Fecha</th><th>Reportado por</th><th>Motivo</th><th>Estado</th></tr></thead>
+        <tbody>{{range .Reports}}<tr>
+            <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+            <td>{{if .ReporterDisplayName}}{{.ReporterDisplayName}}{{else if .ReporterUserName}}@{{.ReporterUserName}}{{else}}{{.ReporterUserID}}{{end}}<div class="small muted">ID {{.ReporterUserID}}</div></td>
+            <td>{{.Reason}}</td><td><span class="badge badge-warn">{{.Status}}</span></td>
+        </tr>{{else}}<tr><td colspan="4" class="center-text muted">No hay reportes sobre esta persona</td></tr>{{end}}</tbody>
+    </table></div>
+
+    <h3>Actividad de reglas</h3>
+    <div class="table-wrap"><table class="table">
+        <thead><tr><th>Fecha</th><th>Topic</th><th>Mensaje</th><th>Regla</th><th>Acción</th><th>Motivo</th></tr></thead>
+        <tbody>{{range .Events}}<tr>
+            <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td><td>{{topicName .ThreadID}}</td>
+            <td><a href="{{telegramMessageURL .ChatID .ThreadID .MessageID}}" target="_blank" rel="noreferrer">{{.MessageID}}</a></td>
+            <td><code>{{.RuleCode}}</code></td><td>{{.Action}}</td><td>{{.Reason}}</td>
+        </tr>{{else}}<tr><td colspan="6" class="center-text muted">No hay actividad de reglas para esta persona</td></tr>{{end}}</tbody>
+    </table></div>
+</div>
+</main>
+</body>
+</html>

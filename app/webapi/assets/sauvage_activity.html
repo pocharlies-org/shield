@@ -25,7 +25,7 @@
             <thead><tr><th>Fecha</th><th>Topic</th><th>Usuario</th><th>Mensaje</th><th>Regla</th><th>Acción</th><th>Modo</th><th>Motivo</th></tr></thead>
             <tbody>{{range .Events}}<tr>
                 <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td><td>{{topicName .ThreadID}}</td>
-                <td><a href="/sauvage/activity?user={{.UserID}}">{{.UserID}}</a></td>
+                <td><a href="/sauvage/users/{{.UserID}}">{{if .DisplayName}}{{.DisplayName}}{{else if .UserName}}@{{.UserName}}{{else}}{{.UserID}}{{end}}</a>{{if .UserName}}<div class="small muted">@{{.UserName}}</div>{{end}}<div class="small muted">ID {{.UserID}}</div></td>
                 <td><a href="{{telegramMessageURL .ChatID .ThreadID .MessageID}}" target="_blank" rel="noreferrer">{{.MessageID}} <i class="bi bi-box-arrow-up-right"></i></a></td>
                 <td><code>{{.RuleCode}}</code></td><td>{{.Action}}</td>
                 <td>{{if .Shadow}}<span class="badge badge-info">shadow</span>{{else}}<span class="badge badge-spam">live</span>{{end}}</td>

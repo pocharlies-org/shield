@@ -24,7 +24,6 @@ type Config struct {
 	ContestID               string
 	Shadow                  bool
 	RequirePresentationText bool
-	PrivateConsentTerms     []string
 }
 
 // Store persists one-time presentations, contest entries, strikes, and audit metadata.
@@ -86,8 +85,42 @@ func NewStore(ctx context.Context, db *engine.SQL) (*Store, error) {
 			created_at TIMESTAMP NOT NULL,
 			PRIMARY KEY (tenant_id, event_key)
 		)`,
+		`CREATE TABLE IF NOT EXISTS community_members (
+			tenant_id TEXT NOT NULL,
+			chat_id BIGINT NOT NULL,
+			user_id BIGINT NOT NULL,
+			username TEXT NOT NULL DEFAULT '',
+			display_name TEXT NOT NULL DEFAULT '',
+			last_message_id INTEGER NOT NULL DEFAULT 0,
+			last_thread_id INTEGER NOT NULL DEFAULT 0,
+			last_message_at TIMESTAMP NOT NULL,
+			first_seen_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (tenant_id, chat_id, user_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS community_user_reports (
+			tenant_id TEXT NOT NULL,
+			report_key TEXT NOT NULL,
+			chat_id BIGINT NOT NULL,
+			reporter_user_id BIGINT NOT NULL,
+			reporter_username TEXT NOT NULL DEFAULT '',
+			reporter_display_name TEXT NOT NULL DEFAULT '',
+			reported_user_id BIGINT NOT NULL,
+			reported_username TEXT NOT NULL DEFAULT '',
+			reported_display_name TEXT NOT NULL DEFAULT '',
+			source_message_id INTEGER NOT NULL DEFAULT 0,
+			source_thread_id INTEGER NOT NULL DEFAULT 0,
+			reason TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'open',
+			created_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (tenant_id, report_key)
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_community_events_topic
 			ON community_rule_events(tenant_id, chat_id, thread_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_community_members_identity
+			ON community_members(tenant_id, chat_id, username, display_name)`,
+		`CREATE INDEX IF NOT EXISTS idx_community_user_reports_target
+			ON community_user_reports(tenant_id, chat_id, reported_user_id, created_at)`,
 	}
 	store.lock.Lock()
 	defer store.lock.Unlock()
@@ -151,6 +184,11 @@ func (e *Engine) Evaluate(ctx context.Context, msg events.CommunityMessage) (eve
 	if !e.config.Enabled || msg.ChatID != e.config.ChatID {
 		return events.CommunityDecision{}, nil
 	}
+	if msg.UserID != 0 && !msg.IsBot {
+		if err := e.store.observeMember(ctx, msg); err != nil {
+			return events.CommunityDecision{}, err
+		}
+	}
 	if msg.ThreadID != e.config.PresentationThreadID && msg.ThreadID != e.config.ContestThreadID {
 		return events.CommunityDecision{}, nil
 	}
@@ -175,17 +213,13 @@ func (e *Engine) evaluatePresentation(
 	ctx context.Context, msg events.CommunityMessage,
 ) (events.CommunityDecision, error) {
 	if msg.IsReply || !msg.HasPhoto || msg.HasVideo {
-		return e.violation(ctx, msg, "presentation_format",
-			"presentations require a new photo post; replies, text-only posts, and videos are not accepted",
-			"En Presentaciones publica una foto nueva con tu presentación. No se permiten respuestas, texto suelto ni vídeos.")
+		return e.violation(ctx, msg, "presentation_message_not_allowed",
+			"Se ha enviado un mensaje en Presentaciones; aquí solo se permiten presentaciones reales con foto y texto.",
+			"En Presentaciones solo se permite publicar una presentación real con foto y texto. No se permiten respuestas, conversación, texto suelto ni vídeos.")
 	}
 	if e.config.RequirePresentationText && msg.MediaGroupID == "" && strings.TrimSpace(msg.Text) == "" {
-		return e.violation(ctx, msg, "presentation_format", "presentation caption is required",
-			"Añade un texto a tu foto de presentación e indica claramente si aceptas mensajes privados.")
-	}
-	if len(e.config.PrivateConsentTerms) > 0 && msg.MediaGroupID == "" && !containsAny(msg.Text, e.config.PrivateConsentTerms) {
-		return e.violation(ctx, msg, "presentation_consent", "private-message consent statement is missing",
-			"Tu presentación debe indicar claramente si aceptas o no mensajes privados.")
+		return e.violation(ctx, msg, "presentation_incomplete", "Se ha publicado una foto sin texto de presentación.",
+			"La foto necesita un texto de presentación para considerarse una presentación válida.")
 	}
 
 	entryKey := domainEntryKey(msg)
@@ -196,10 +230,10 @@ func (e *Engine) evaluatePresentation(
 	if claimed || existingKey == entryKey {
 		return e.record(ctx, msg, events.CommunityDecision{
 			Handled: true, Enforce: false, Action: moderation.ActionAllow,
-			Rule: "presentation_once", Reason: "first presentation or continuation of the same album",
+			Rule: "presentation_once", Reason: "Primera presentación válida o continuación del mismo álbum.",
 		})
 	}
-	return e.violation(ctx, msg, "presentation_duplicate", "user already has a presentation",
+	return e.violation(ctx, msg, "presentation_duplicate", "La persona ya tiene una presentación registrada.",
 		"Solo se permite una presentación por persona. Esta publicación se ha retirado.")
 }
 
@@ -270,16 +304,6 @@ func domainEntryKey(msg events.CommunityMessage) string {
 		return "album:" + msg.MediaGroupID
 	}
 	return fmt.Sprintf("message:%d", msg.MessageID)
-}
-
-func containsAny(text string, terms []string) bool {
-	normalized := strings.ToLower(text)
-	for _, term := range terms {
-		if term = strings.TrimSpace(strings.ToLower(term)); term != "" && strings.Contains(normalized, term) {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Store) claimPresentation(

@@ -139,16 +139,68 @@ func (s *Server) htmlSauvageContestsHandler(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) htmlSauvageUsersHandler(w http.ResponseWriter, r *http.Request) {
-	records, err := s.CommunityDashboard.ListViolations(r.Context(), boundedQueryInt(r, "limit", 500, 1, 1000))
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	records, err := s.CommunityDashboard.ListMembers(r.Context(), community.MemberFilter{
+		Query: query, Limit: boundedQueryInt(r, "limit", 200, 1, 1000),
+	})
 	if err != nil {
-		http.Error(w, "No se pudieron cargar las reincidencias", http.StatusInternalServerError)
+		http.Error(w, "No se pudo cargar el directorio de usuarios", http.StatusInternalServerError)
+		return
+	}
+	reports, err := s.CommunityDashboard.ListUserReports(r.Context(), community.UserReportFilter{Limit: 100})
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los reportes", http.StatusInternalServerError)
 		return
 	}
 	data := struct {
-		Records  []community.ViolationRecord
+		Records  []community.MemberRecord
+		Reports  []community.UserReportRecord
 		Settings Settings
-	}{records, s.Settings}
+		Query    string
+	}{records, reports, s.Settings, query}
 	if err = tmpl.ExecuteTemplate(w, "sauvage_users.html", data); err != nil {
+		http.Error(w, "No se pudo renderizar la página", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) htmlSauvageUserDetailHandler(w http.ResponseWriter, r *http.Request) {
+	userID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || userID == 0 {
+		http.Error(w, "Usuario no válido", http.StatusBadRequest)
+		return
+	}
+	members, err := s.CommunityDashboard.ListMembers(r.Context(), community.MemberFilter{
+		UserID: userID, Limit: 1,
+	})
+	if err != nil {
+		http.Error(w, "No se pudo cargar el usuario", http.StatusInternalServerError)
+		return
+	}
+	if len(members) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	reports, err := s.CommunityDashboard.ListUserReports(r.Context(), community.UserReportFilter{
+		ChatID: members[0].ChatID, ReportedUserID: userID, Limit: 200,
+	})
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los reportes del usuario", http.StatusInternalServerError)
+		return
+	}
+	events, err := s.CommunityDashboard.ListRuleEvents(r.Context(), community.RuleEventFilter{
+		UserID: userID, Limit: 200,
+	})
+	if err != nil {
+		http.Error(w, "No se pudo cargar la actividad del usuario", http.StatusInternalServerError)
+		return
+	}
+	data := struct {
+		Member   community.MemberRecord
+		Reports  []community.UserReportRecord
+		Events   []community.RuleEvent
+		Settings Settings
+	}{members[0], reports, events, s.Settings}
+	if err = tmpl.ExecuteTemplate(w, "sauvage_user_detail.html", data); err != nil {
 		http.Error(w, "No se pudo renderizar la página", http.StatusInternalServerError)
 	}
 }
