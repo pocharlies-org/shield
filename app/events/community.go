@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tbapi "github.com/OvyFlash/telegram-bot-api"
@@ -22,6 +23,7 @@ type CommunityMessage struct {
 	MediaGroupID    string
 	UserID          int64
 	UserName        string
+	DisplayName     string
 	Text            string
 	HasPhoto        bool
 	HasVideo        bool
@@ -29,6 +31,50 @@ type CommunityMessage struct {
 	IsBot           bool
 	IsAdministrator bool
 	ReceivedAt      time.Time
+}
+
+// CommunityMember is the durable identity used by the private Sauvage assistant.
+type CommunityMember struct {
+	ChatID        int64     `db:"chat_id"`
+	UserID        int64     `db:"user_id"`
+	UserName      string    `db:"username"`
+	DisplayName   string    `db:"display_name"`
+	LastMessageID int       `db:"last_message_id"`
+	LastThreadID  int       `db:"last_thread_id"`
+	LastMessageAt time.Time `db:"last_message_at"`
+}
+
+// CommunityPresentation is the member's one accepted presentation.
+type CommunityPresentation struct {
+	ChatID         int64     `db:"chat_id"`
+	ThreadID       int       `db:"thread_id"`
+	UserID         int64     `db:"user_id"`
+	FirstMessageID int       `db:"first_message_id"`
+	CreatedAt      time.Time `db:"created_at"`
+}
+
+// CommunityUserReport is a private complaint collected by the Sauvage assistant.
+type CommunityUserReport struct {
+	ReportKey           string
+	ChatID              int64
+	ReporterUserID      int64
+	ReporterUserName    string
+	ReporterDisplayName string
+	ReportedUserID      int64
+	ReportedUserName    string
+	ReportedDisplayName string
+	SourceMessageID     int
+	SourceThreadID      int
+	Reason              string
+	CreatedAt           time.Time
+}
+
+// CommunityAssistantStore is the narrow storage contract used by private bot commands.
+type CommunityAssistantStore interface {
+	GetCommunityPresentation(ctx context.Context, chatID, userID int64) (CommunityPresentation, bool, error)
+	FindCommunityMemberByUsername(ctx context.Context, chatID int64, username string) (CommunityMember, bool, error)
+	GetCommunityMember(ctx context.Context, chatID, userID int64) (CommunityMember, bool, error)
+	CreateCommunityUserReport(ctx context.Context, report CommunityUserReport) error
 }
 
 // CommunityDecision describes a deterministic topic-rule result.
@@ -56,10 +102,15 @@ func (l *TelegramListener) handleCommunityMessage(ctx context.Context, update tb
 	msg := update.Message
 	var userID int64
 	var userName string
+	var displayName string
 	var isBot bool
 	if msg.From != nil {
 		userID = msg.From.ID
 		userName = msg.From.UserName
+		displayName = strings.TrimSpace(msg.From.FirstName + " " + msg.From.LastName)
+		if displayName == "" {
+			displayName = userName
+		}
 		isBot = msg.From.IsBot
 	}
 	isAdministrator := l.SuperUsers.IsSuper(userName, userID)
@@ -75,6 +126,7 @@ func (l *TelegramListener) handleCommunityMessage(ctx context.Context, update tb
 		MediaGroupID:    msg.MediaGroupID,
 		UserID:          userID,
 		UserName:        userName,
+		DisplayName:     displayName,
 		Text:            messageText(msg),
 		HasPhoto:        len(msg.Photo) > 0,
 		HasVideo:        msg.Video != nil || msg.VideoNote != nil || msg.Story != nil || msg.Animation != nil,

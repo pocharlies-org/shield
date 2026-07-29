@@ -94,11 +94,15 @@ type TelegramListener struct {
 	CandidateGenerator      CandidateGenerator
 	AutoLearner             AutoLearner
 	CommunityModerator      CommunityModerator
+	CommunityAssistantStore CommunityAssistantStore
+	CommunityChatID         int64
+	PresentationThreadID    int
 	OnReady                 func()
 
 	adminHandler     *admin
 	reportsHandler   *userReports
 	appealHandler    *appealHandler
+	communityPrivate *communityPrivateAssistant
 	processor        incomingEventProcessor
 	pipeline         listenerPipeline
 	dmUsers          dmUsers            // recent DM senders, stored in memory for admin UI
@@ -260,6 +264,7 @@ func (l *TelegramListener) Do(ctx context.Context) error {
 
 	l.ensurePipeline()
 	l.initHandlers()
+	l.configureCommunityPrivateCommands()
 
 	adminForwardStatus := "enabled"
 	if l.DisableAdminSpamForward {
@@ -301,6 +306,11 @@ func (l *TelegramListener) initHandlers() {
 
 	if l.AppealService != nil {
 		l.appealHandler = newAppealHandler(l.TbAPI, l.AppealService, l.adminChatID)
+	}
+	if l.CommunityAssistantStore != nil && l.CommunityChatID != 0 {
+		l.communityPrivate = newCommunityPrivateAssistant(
+			l.TbAPI, l.CommunityAssistantStore, l.CommunityChatID, l.PresentationThreadID,
+		)
 	}
 }
 
@@ -397,6 +407,12 @@ func (l *TelegramListener) handleUpdate(ctx context.Context, update tbapi.Update
 	}
 
 	if update.Message.Chat.Type == "private" && l.procAppealStart(ctx, update) {
+		return nil
+	}
+	if update.Message.Chat.Type == "private" && l.communityPrivate != nil {
+		if err := l.communityPrivate.Handle(ctx, update.Message); err != nil {
+			log.Printf("[WARN] failed to handle Sauvage private command: %v", err)
+		}
 		return nil
 	}
 

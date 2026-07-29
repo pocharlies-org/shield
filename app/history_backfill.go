@@ -20,6 +20,7 @@ type archiveMessageRow struct {
 	ArchiveID       string    `db:"archive_id"`
 	SenderID        string    `db:"sender_id"`
 	SenderName      string    `db:"sender_name"`
+	SenderUsername  string    `db:"sender_username"`
 	ReceivedAt      time.Time `db:"received_at"`
 	Content         string    `db:"content"`
 	MessageType     string    `db:"message_type"`
@@ -29,10 +30,11 @@ type archiveMessageRow struct {
 }
 
 type historyBackfillLoadSummary struct {
-	SourceRows      int
-	SelectedRows    int
-	SkippedInvalid  int
-	SkippedExisting int
+	SourceRows         int
+	SelectedRows       int
+	SkippedInvalid     int
+	SkippedExisting    int
+	MemberObservations []events.CommunityMember
 }
 
 func runCommunityHistoryBackfill(ctx context.Context, opts options, assembly *runtimeAssembly) error {
@@ -72,13 +74,27 @@ func runCommunityHistoryBackfill(ctx context.Context, opts options, assembly *ru
 	if err != nil {
 		return err
 	}
+	for _, member := range loadSummary.MemberObservations {
+		if err = assembly.CommunityStore.ObserveMember(ctx, member); err != nil {
+			return fmt.Errorf("backfill community member directory: %w", err)
+		}
+	}
+	if opts.Backfill.RebuildCommunity {
+		if err = assembly.CommunityStore.ResetHistoricalTopicState(
+			ctx, opts.Community.ChatID, historyBackfillTopics(opts),
+			time.Now().UTC().Add(-opts.Backfill.Lookback),
+		); err != nil {
+			return fmt.Errorf("rebuild historical community state: %w", err)
+		}
+		log.Printf("[INFO] reset dry-run community history for topics=%v", historyBackfillTopics(opts))
+	}
 	existing, err := existingTargetMessageIDs(ctx, assembly.DataDB, opts.InstanceID, opts.Community.ChatID)
 	if err != nil {
 		return err
 	}
 	selected := messages[:0]
 	for _, message := range messages {
-		if _, found := existing[message.MessageID]; found {
+		if _, found := existing[message.MessageID]; found && !opts.Backfill.RebuildCommunity {
 			loadSummary.SkippedExisting++
 			continue
 		}
@@ -113,6 +129,7 @@ func loadArchivedTelegramMessages(
 			wa_message_id AS archive_id,
 			COALESCE(sender_wa_id, '') AS sender_id,
 			COALESCE(metadata->>'sender_name', '') AS sender_name,
+			COALESCE(metadata->>'sender_username', '') AS sender_username,
 			wa_timestamp AS received_at,
 			COALESCE(content, '') AS content,
 			UPPER(COALESCE(message_type, 'TEXT')) AS message_type,
@@ -145,13 +162,18 @@ func loadArchivedTelegramMessages(
 	summary := historyBackfillLoadSummary{SourceRows: len(rows)}
 	messages := make([]events.HistoricalMessage, 0, len(rows))
 	for _, row := range rows {
-		if _, selected := topics[row.TopicID]; !selected {
-			continue
-		}
 		message, err := historicalMessageFromArchiveRow(row, opts.Community.ChatID, opts.Backfill.Account)
 		if err != nil {
 			summary.SkippedInvalid++
 			log.Printf("[WARN] skip invalid archived Telegram message %q: %v", row.ArchiveID, err)
+			continue
+		}
+		summary.MemberObservations = append(summary.MemberObservations, events.CommunityMember{
+			ChatID: message.ChatID, UserID: message.UserID, UserName: message.UserName,
+			DisplayName: message.DisplayName, LastMessageID: message.MessageID,
+			LastThreadID: message.ThreadID, LastMessageAt: message.ReceivedAt,
+		})
+		if _, selected := topics[row.TopicID]; !selected {
 			continue
 		}
 		messages = append(messages, message)
@@ -205,7 +227,8 @@ func historicalMessageFromArchiveRow(
 		ThreadID:        row.TopicID,
 		MessageID:       messageID,
 		UserID:          userID,
-		UserName:        strings.TrimSpace(row.SenderName),
+		UserName:        strings.TrimPrefix(strings.TrimSpace(row.SenderUsername), "@"),
+		DisplayName:     strings.TrimSpace(row.SenderName),
 		Text:            row.Content,
 		HasPhoto:        messageType == "PHOTO",
 		HasVideo:        messageType == "VIDEO" || messageType == "VIDEO_NOTE" || messageType == "ANIMATION",

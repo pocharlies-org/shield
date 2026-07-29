@@ -37,6 +37,8 @@ type RuleEvent struct {
 	ThreadID       int       `db:"thread_id"`
 	MessageID      int       `db:"message_id"`
 	UserID         int64     `db:"user_id"`
+	UserName       string    `db:"username"`
+	DisplayName    string    `db:"display_name"`
 	RuleCode       string    `db:"rule_code"`
 	Action         string    `db:"action"`
 	Reason         string    `db:"reason"`
@@ -48,7 +50,10 @@ type RuleEvent struct {
 
 // PresentationRecord identifies a member's persistent presentation claim.
 type PresentationRecord struct {
+	ChatID         int64     `db:"chat_id"`
 	UserID         int64     `db:"user_id"`
+	UserName       string    `db:"username"`
+	DisplayName    string    `db:"display_name"`
 	ThreadID       int       `db:"thread_id"`
 	FirstMessageID int       `db:"first_message_id"`
 	EntryKey       string    `db:"entry_key"`
@@ -58,7 +63,10 @@ type PresentationRecord struct {
 // ContestEntryRecord identifies one member entry in one contest.
 type ContestEntryRecord struct {
 	ContestID      string    `db:"contest_id"`
+	ChatID         int64     `db:"chat_id"`
 	UserID         int64     `db:"user_id"`
+	UserName       string    `db:"username"`
+	DisplayName    string    `db:"display_name"`
 	ThreadID       int       `db:"thread_id"`
 	FirstMessageID int       `db:"first_message_id"`
 	EntryKey       string    `db:"entry_key"`
@@ -67,10 +75,12 @@ type ContestEntryRecord struct {
 
 // ViolationRecord contains the live strike counter for one member and rule.
 type ViolationRecord struct {
-	UserID    int64     `db:"user_id"`
-	RuleCode  string    `db:"rule_code"`
-	Strikes   int       `db:"strikes"`
-	UpdatedAt time.Time `db:"updated_at"`
+	UserID      int64     `db:"user_id"`
+	UserName    string    `db:"username"`
+	DisplayName string    `db:"display_name"`
+	RuleCode    string    `db:"rule_code"`
+	Strikes     int       `db:"strikes"`
+	UpdatedAt   time.Time `db:"updated_at"`
 }
 
 // DashboardSnapshot is a bounded operational view for the web UI and API.
@@ -165,38 +175,42 @@ func (s *Store) ListRuleEvents(ctx context.Context, filter RuleEventFilter) ([]R
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	where := []string{"tenant_id = ?"}
+	where := []string{"e.tenant_id = ?"}
 	args := []any{s.db.TenantID()}
 	if !filter.Since.IsZero() {
-		where = append(where, "created_at >= ?")
+		where = append(where, "e.created_at >= ?")
 		args = append(args, filter.Since.UTC())
 	}
 	if filter.ThreadID > 0 {
-		where = append(where, "thread_id = ?")
+		where = append(where, "e.thread_id = ?")
 		args = append(args, filter.ThreadID)
 	}
 	if filter.UserID != 0 {
-		where = append(where, "user_id = ?")
+		where = append(where, "e.user_id = ?")
 		args = append(args, filter.UserID)
 	}
 	if strings.TrimSpace(filter.RuleCode) != "" {
-		where = append(where, "rule_code = ?")
+		where = append(where, "e.rule_code = ?")
 		args = append(args, strings.TrimSpace(filter.RuleCode))
 	}
 	if strings.TrimSpace(filter.Action) != "" {
-		where = append(where, "action = ?")
+		where = append(where, "e.action = ?")
 		args = append(args, strings.TrimSpace(filter.Action))
 	}
 	if filter.Shadow != nil {
-		where = append(where, "shadow = ?")
+		where = append(where, "e.shadow = ?")
 		args = append(args, *filter.Shadow)
 	}
 	args = append(args, limit)
 
-	query := s.db.Adopt(`SELECT event_key, chat_id, thread_id, message_id, user_id, rule_code, action,
-		reason, user_message, duration_seconds, shadow, created_at
-		FROM community_rule_events WHERE ` + strings.Join(where, " AND ") + `
-		ORDER BY created_at DESC LIMIT ?`)
+	query := s.db.Adopt(`SELECT e.event_key, e.chat_id, e.thread_id, e.message_id, e.user_id,
+		COALESCE(m.username, '') AS username, COALESCE(m.display_name, '') AS display_name,
+		e.rule_code, e.action, e.reason, e.user_message, e.duration_seconds, e.shadow, e.created_at
+		FROM community_rule_events e
+		LEFT JOIN community_members m
+		  ON m.tenant_id = e.tenant_id AND m.chat_id = e.chat_id AND m.user_id = e.user_id
+		WHERE ` + strings.Join(where, " AND ") + `
+		ORDER BY e.created_at DESC LIMIT ?`)
 	var events []RuleEvent
 	if err := s.db.SelectContext(ctx, &events, query, args...); err != nil {
 		return nil, fmt.Errorf("list community rule events: %w", err)
@@ -207,8 +221,12 @@ func (s *Store) ListRuleEvents(ctx context.Context, filter RuleEventFilter) ([]R
 // ListPresentations returns persistent presentation claims newest first.
 func (s *Store) ListPresentations(ctx context.Context, limit int) ([]PresentationRecord, error) {
 	limit = boundedLimit(limit)
-	query := s.db.Adopt(`SELECT user_id, thread_id, first_message_id, entry_key, created_at
-		FROM community_presentations WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?`)
+	query := s.db.Adopt(`SELECT p.chat_id, p.user_id, COALESCE(m.username, '') AS username,
+		COALESCE(m.display_name, '') AS display_name, p.thread_id, p.first_message_id, p.entry_key, p.created_at
+		FROM community_presentations p
+		LEFT JOIN community_members m
+		  ON m.tenant_id = p.tenant_id AND m.chat_id = p.chat_id AND m.user_id = p.user_id
+		WHERE p.tenant_id = ? ORDER BY p.created_at DESC LIMIT ?`)
 	var records []PresentationRecord
 	if err := s.db.SelectContext(ctx, &records, query, s.db.TenantID(), limit); err != nil {
 		return nil, fmt.Errorf("list community presentations: %w", err)
@@ -226,8 +244,12 @@ func (s *Store) ListContestEntries(ctx context.Context, contestID string, limit 
 		args = append(args, strings.TrimSpace(contestID))
 	}
 	args = append(args, limit)
-	query := s.db.Adopt(`SELECT contest_id, user_id, thread_id, first_message_id, entry_key, created_at
-		FROM community_contest_entries WHERE ` + where + ` ORDER BY created_at DESC LIMIT ?`)
+	query := s.db.Adopt(`SELECT c.contest_id, c.chat_id, c.user_id, COALESCE(m.username, '') AS username,
+		COALESCE(m.display_name, '') AS display_name, c.thread_id, c.first_message_id, c.entry_key, c.created_at
+		FROM community_contest_entries c
+		LEFT JOIN community_members m
+		  ON m.tenant_id = c.tenant_id AND m.chat_id = c.chat_id AND m.user_id = c.user_id
+		WHERE ` + strings.ReplaceAll(where, "tenant_id", "c.tenant_id") + ` ORDER BY c.created_at DESC LIMIT ?`)
 	var records []ContestEntryRecord
 	if err := s.db.SelectContext(ctx, &records, query, args...); err != nil {
 		return nil, fmt.Errorf("list community contest entries: %w", err)
@@ -238,9 +260,13 @@ func (s *Store) ListContestEntries(ctx context.Context, contestID string, limit 
 // ListViolations returns current live strike counters.
 func (s *Store) ListViolations(ctx context.Context, limit int) ([]ViolationRecord, error) {
 	limit = boundedLimit(limit)
-	query := s.db.Adopt(`SELECT user_id, rule_code, strikes, updated_at
-		FROM community_violations WHERE tenant_id = ?
-		ORDER BY strikes DESC, updated_at DESC LIMIT ?`)
+	query := s.db.Adopt(`SELECT v.user_id, COALESCE(m.username, '') AS username,
+		COALESCE(m.display_name, '') AS display_name, v.rule_code, v.strikes, v.updated_at
+		FROM community_violations v
+		LEFT JOIN community_members m
+		  ON m.tenant_id = v.tenant_id AND m.chat_id = v.chat_id AND m.user_id = v.user_id
+		WHERE v.tenant_id = ?
+		ORDER BY v.strikes DESC, v.updated_at DESC LIMIT ?`)
 	var records []ViolationRecord
 	if err := s.db.SelectContext(ctx, &records, query, s.db.TenantID(), limit); err != nil {
 		return nil, fmt.Errorf("list community violations: %w", err)

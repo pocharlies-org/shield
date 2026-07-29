@@ -155,28 +155,28 @@ type options struct {
 	} `group:"report" namespace:"report" env-namespace:"REPORT"`
 
 	Community struct {
-		Enabled                    bool     `long:"enabled" env:"ENABLED" description:"enable deterministic community topic rules"`
-		ChatID                     int64    `long:"chat-id" env:"CHAT_ID" description:"Telegram forum chat id for community rules"`
-		PresentationThreadID       int      `long:"presentation-thread-id" env:"PRESENTATION_THREAD_ID" default:"3" description:"presentations topic id"`
-		ContestThreadID            int      `long:"contest-thread-id" env:"CONTEST_THREAD_ID" default:"6" description:"contest topic id"`
-		ContestID                  string   `long:"contest-id" env:"CONTEST_ID" description:"stable id for the active contest; change it for every new contest"`
-		ApplyActions               bool     `long:"apply-actions" env:"APPLY_ACTIONS" description:"apply community-rule actions; disabled means shadow mode"`
-		AllowEmptyPresentationText bool     `long:"allow-empty-presentation-text" env:"ALLOW_EMPTY_PRESENTATION_TEXT" description:"allow a single-photo presentation without caption text"`
-		PrivateConsentTerms        []string `long:"private-consent-term" env:"PRIVATE_CONSENT_TERMS" env-delim:"," description:"accepted phrases that state private-message consent"`
-		DailyDigestEnabled         bool     `long:"daily-digest" env:"DAILY_DIGEST" description:"send a daily privacy-preserving summary to the admin chat"`
-		DailyDigestHour            int      `long:"daily-digest-hour" env:"DAILY_DIGEST_HOUR" default:"9" description:"local hour for the daily digest"`
-		DailyDigestTimezone        string   `long:"daily-digest-timezone" env:"DAILY_DIGEST_TIMEZONE" default:"Europe/Madrid" description:"IANA timezone for the daily digest"`
-		DashboardURL               string   `long:"dashboard-url" env:"DASHBOARD_URL" description:"dashboard link included in the daily digest"`
+		Enabled                    bool   `long:"enabled" env:"ENABLED" description:"enable deterministic community topic rules"`
+		ChatID                     int64  `long:"chat-id" env:"CHAT_ID" description:"Telegram forum chat id for community rules"`
+		PresentationThreadID       int    `long:"presentation-thread-id" env:"PRESENTATION_THREAD_ID" default:"3" description:"presentations topic id"`
+		ContestThreadID            int    `long:"contest-thread-id" env:"CONTEST_THREAD_ID" default:"6" description:"contest topic id"`
+		ContestID                  string `long:"contest-id" env:"CONTEST_ID" description:"stable id for the active contest; change it for every new contest"`
+		ApplyActions               bool   `long:"apply-actions" env:"APPLY_ACTIONS" description:"apply community-rule actions; disabled means shadow mode"`
+		AllowEmptyPresentationText bool   `long:"allow-empty-presentation-text" env:"ALLOW_EMPTY_PRESENTATION_TEXT" description:"allow a single-photo presentation without caption text"`
+		DailyDigestEnabled         bool   `long:"daily-digest" env:"DAILY_DIGEST" description:"send a daily privacy-preserving summary to the admin chat"`
+		DailyDigestHour            int    `long:"daily-digest-hour" env:"DAILY_DIGEST_HOUR" default:"9" description:"local hour for the daily digest"`
+		DailyDigestTimezone        string `long:"daily-digest-timezone" env:"DAILY_DIGEST_TIMEZONE" default:"Europe/Madrid" description:"IANA timezone for the daily digest"`
+		DashboardURL               string `long:"dashboard-url" env:"DASHBOARD_URL" description:"dashboard link included in the daily digest"`
 	} `group:"community" namespace:"community" env-namespace:"COMMUNITY"`
 
 	Backfill struct {
-		Only           bool          `long:"only" env:"ONLY" description:"run the historical analysis and exit"`
-		SourceDB       string        `long:"source-db" env:"SOURCE_DB" description:"read-only social-media archive database URL"`
-		Account        string        `long:"account" env:"ACCOUNT" default:"personal" description:"archive account to read"`
-		ConversationID string        `long:"conversation-id" env:"CONVERSATION_ID" description:"archived Telegram conversation id"`
-		Lookback       time.Duration `long:"lookback" env:"LOOKBACK" default:"168h" description:"historical window to analyze"`
-		Topics         []int         `long:"topic" env:"TOPICS" env-delim:"," description:"forum topic ids to analyze; defaults to presentation and contest topics"`
-		AlbumWindow    time.Duration `long:"album-window" env:"ALBUM_WINDOW" default:"2s" description:"maximum gap between archived photos in one reconstructed album"`
+		Only             bool          `long:"only" env:"ONLY" description:"run the historical analysis and exit"`
+		SourceDB         string        `long:"source-db" env:"SOURCE_DB" description:"read-only social-media archive database URL"`
+		Account          string        `long:"account" env:"ACCOUNT" default:"personal" description:"archive account to read"`
+		ConversationID   string        `long:"conversation-id" env:"CONVERSATION_ID" description:"archived Telegram conversation id"`
+		Lookback         time.Duration `long:"lookback" env:"LOOKBACK" default:"168h" description:"historical window to analyze"`
+		Topics           []int         `long:"topic" env:"TOPICS" env-delim:"," description:"forum topic ids to analyze; defaults to presentation and contest topics"`
+		AlbumWindow      time.Duration `long:"album-window" env:"ALBUM_WINDOW" default:"2s" description:"maximum gap between archived photos in one reconstructed album"`
+		RebuildCommunity bool          `long:"rebuild-community" env:"REBUILD_COMMUNITY" description:"rebuild dry-run community topic decisions and one-time claims from the selected archive window"`
 	} `group:"backfill" namespace:"backfill" env-namespace:"BACKFILL"`
 
 	Files struct {

@@ -21,6 +21,7 @@ type HistoricalMessage struct {
 	MediaGroupID    string
 	UserID          int64
 	UserName        string
+	DisplayName     string
 	Text            string
 	HasPhoto        bool
 	HasVideo        bool
@@ -92,6 +93,7 @@ func (l *TelegramListener) analyzeHistoricalMessage(ctx context.Context, archive
 			MediaGroupID: archived.MediaGroupID,
 			UserID:       archived.UserID,
 			UserName:     archived.UserName,
+			DisplayName:  archived.DisplayName,
 			Text:         archived.Text,
 			HasPhoto:     archived.HasPhoto,
 			HasVideo:     archived.HasVideo,
@@ -123,7 +125,7 @@ func (l *TelegramListener) analyzeHistoricalMessage(ctx context.Context, archive
 		From: &tbapi.User{
 			ID:        archived.UserID,
 			UserName:  archived.UserName,
-			FirstName: archived.UserName,
+			FirstName: archived.DisplayName,
 			IsBot:     archived.IsBot,
 		},
 	}}

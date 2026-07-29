@@ -9,7 +9,7 @@
         <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/activity' }" href="/sauvage/activity"><i class="bi bi-activity"></i>Actividad</a></li>
         <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/presentations' }" href="/sauvage/presentations"><i class="bi bi-person-badge"></i>Presentaciones</a></li>
         <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/contests' }" href="/sauvage/contests"><i class="bi bi-trophy"></i>Concursos</a></li>
-        <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/users' }" href="/sauvage/users"><i class="bi bi-person-exclamation"></i>Reincidencias</a></li>
+        <li><a class="nav-link" :class="{ 'is-active': window.location.pathname.startsWith('/sauvage/users') }" href="/sauvage/users"><i class="bi bi-people"></i>Usuarios y reportes</a></li>
         <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/sauvage/system' }" href="/sauvage/system"><i class="bi bi-heart-pulse"></i>Sistema</a></li>
         <li class="nav-section">SHIELD</li>
         <li><a class="nav-link" :class="{ 'is-active': window.location.pathname === '/' }" href="/"><i class="bi bi-shield-check"></i>Checker</a></li>

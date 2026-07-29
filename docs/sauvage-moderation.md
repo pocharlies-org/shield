@@ -9,7 +9,7 @@ the Sauvage Telegram group (`-1003672565710`).
 |---|---:|---|
 | General | 1 | Normal pipeline and Ornith conduct moderation |
 | Preguntas | 2 | Normal pipeline and Ornith conduct moderation |
-| Presentaciones | 3 | One persistent presentation per Telegram user |
+| Presentaciones | 3 | One persistent photo-and-text presentation per Telegram user |
 | Calendario | 5 | Normal pipeline and Ornith conduct moderation |
 | Concurso | 6 | One entry/album per user and active contest id |
 
@@ -24,6 +24,12 @@ and user id. Change `COMMUNITY_CONTEST_ID` for every new contest.
 An allowed topic decision, or any topic decision while shadow mode is active, continues through the
 normal Ornith conduct classifier. Topic quotas therefore do not bypass the rules against abuse,
 coercion, disclosure of another person's private life, scams, or unwanted advertising.
+
+Presentaciones has three distinct violations: ordinary messages/replies
+(`presentation_message_not_allowed`), a photo without presentation text
+(`presentation_incomplete`), and a second otherwise valid presentation
+(`presentation_duplicate`). The presentation does not require a particular phrase about private
+messages.
 
 ## Actions and shadow rollout
 
@@ -91,6 +97,8 @@ The new SQL tables store no raw message body:
 - `community_contest_entries`;
 - `community_violations`;
 - `community_rule_events`.
+- `community_members` (identity and last-message metadata, without message bodies);
+- `community_user_reports` (reporter, reported member, reason, status, and timestamps).
 
 Ingress records include topic and media-group identifiers for traceability. Retention now uses the
 real timestamp columns and propagates SQL errors instead of silently reporting success. Back up the
@@ -109,6 +117,7 @@ BACKFILL_CONVERSATION_ID=tg_-1003672565710
 BACKFILL_LOOKBACK=168h
 BACKFILL_TOPICS=3,6
 BACKFILL_ALBUM_WINDOW=2s
+BACKFILL_REBUILD_COMMUNITY=true
 LLM_HISTORY_CONTEXT_SIZE=0
 DRY=true
 COMMUNITY_APPLY_ACTIONS=false
@@ -120,6 +129,11 @@ message ids that already exist in `incoming_events`, and uses archive-scoped ide
 Topic rules receive the original photo/video metadata while Ornith reviews stored text and captions
 without trying to download expired Telegram media. The process exits after analysis and never
 starts a Telegram poller or web server.
+
+The optional rebuild flag replaces only shadow topic decisions and one-time claims inside the
+selected lookback window. It is intended for correcting historical rule classifications after a
+deterministic rule change. The same run refreshes the member directory from all archived group
+topics in that window, while moderation analysis remains limited to `BACKFILL_TOPICS`.
 
 Keep chat-history context disabled for a historical topic run. A presentation topic contains many
 unrelated profiles; treating previous members' profiles as context for the current member creates
@@ -140,8 +154,21 @@ SERVER_FORWARD_AUTH_PROXY_CIDRS=10.42.0.0/16,100.107.21.89/32,100.71.117.127/32,
 Never expose the Shield service directly. NetworkPolicy must only admit Traefik Edge and Traefik
 LAN. The `/32` addresses are the current host-network Traefik Edge nodes; update this allowlist if
 those ingress nodes change. The dashboard provides summary totals, deterministic rule events, the durable Telegram action
-journal, presentations, contest entries, live strike counters, CSV export, and runtime state. The
+journal, presentations with member names, contest entries, a searchable member directory, private
+user reports, live strike counters, CSV export, and runtime state. The
 daily digest contains counts only and never includes member message bodies.
+
+## Private bot functions
+
+The private command menu contains exactly:
+
+- `/normas`: concise group rules;
+- `/mipresentacion`: whether the sender has a registered presentation and its Telegram link;
+- `/reportar`: a guided report flow accepting `@username` or a forwarded user message, followed by
+  a free-text reason.
+
+Reports appear in the user directory and the reported member's detail page. They are evidence for
+human review only and do not increment strikes or enqueue Telegram actions.
 
 `RETENTION_COMMUNITY_EVENTS_TTL` controls the audit-event lifetime independently from persistent
 presentation claims and per-contest entry claims.

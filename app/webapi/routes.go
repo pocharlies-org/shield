@@ -153,6 +153,7 @@ func (s *Server) setupWebUIRoutes(router *routegroup.Bundle) {
 			webUI.HandleFunc("GET /sauvage/presentations", s.htmlSauvagePresentationsHandler)
 			webUI.HandleFunc("GET /sauvage/contests", s.htmlSauvageContestsHandler)
 			webUI.HandleFunc("GET /sauvage/users", s.htmlSauvageUsersHandler)
+			webUI.HandleFunc("GET /sauvage/users/{id}", s.htmlSauvageUserDetailHandler)
 			webUI.HandleFunc("GET /sauvage/system", s.htmlSauvageSystemHandler)
 			webUI.HandleFunc("GET /sauvage/export.csv", s.sauvageCSVHandler)
 		}

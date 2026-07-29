@@ -19,7 +19,6 @@ func TestPresentationIsPersistentAndAlbumAware(t *testing.T) {
 	eng := newTestEngine(t, Config{
 		Enabled: true, ChatID: -1001, PresentationThreadID: 3, ContestThreadID: 6,
 		ContestID: "summer-2026", RequirePresentationText: true,
-		PrivateConsentTerms: []string{"acepto privados", "no acepto privados"},
 	})
 	ctx := context.Background()
 
@@ -48,33 +47,62 @@ func TestPresentationIsPersistentAndAlbumAware(t *testing.T) {
 	assert.Equal(t, "presentation_duplicate", duplicate.Rule)
 }
 
-func TestSinglePhotoPresentationRequiresCaptionAndPrivatePreference(t *testing.T) {
+func TestPresentationSeparatesConversationIncompleteAndValidPosts(t *testing.T) {
 	eng := newTestEngine(t, Config{
 		Enabled: true, ChatID: -1001, PresentationThreadID: 3, ContestThreadID: 6,
 		ContestID: "summer-2026", RequirePresentationText: true,
-		PrivateConsentTerms: []string{"acepto privados", "no acepto privados"},
 	})
+
+	conversation, err := eng.Evaluate(context.Background(), events.CommunityMessage{
+		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 1,
+		UserID: 1, Text: "¿Y eso?", IsReply: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "presentation_message_not_allowed", conversation.Rule)
 
 	empty, err := eng.Evaluate(context.Background(), events.CommunityMessage{
-		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 1,
-		UserID: 1, HasPhoto: true,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "presentation_format", empty.Rule)
-
-	withoutPreference, err := eng.Evaluate(context.Background(), events.CommunityMessage{
 		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 2,
-		UserID: 2, HasPhoto: true, Text: "Hola, soy Ana",
+		UserID: 2, HasPhoto: true,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "presentation_consent", withoutPreference.Rule)
+	assert.Equal(t, "presentation_incomplete", empty.Rule)
 
 	valid, err := eng.Evaluate(context.Background(), events.CommunityMessage{
 		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 3,
-		UserID: 3, HasPhoto: true, Text: "Hola, no acepto privados",
+		UserID: 3, HasPhoto: true, Text: "Hola, soy Ana",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, moderation.ActionAllow, valid.Action)
+}
+
+func TestPresentationRegressionForRecentSauvageMessages(t *testing.T) {
+	eng := newTestEngine(t, Config{
+		Enabled: true, ChatID: -1001, PresentationThreadID: 3, ContestThreadID: 6,
+		ContestID: "summer-2026", RequirePresentationText: true, Shadow: true,
+	})
+	ctx := context.Background()
+
+	presentation, err := eng.Evaluate(ctx, events.CommunityMessage{
+		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 52425,
+		UserID: 1, HasPhoto: true, Text: "Miquel 29 y Ariadna 27 aceptamos privados de todo el mundo",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "presentation_once", presentation.Rule)
+
+	reply, err := eng.Evaluate(ctx, events.CommunityMessage{
+		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 52504,
+		UserID: 2, IsReply: true, Text: "¿Y eso?",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "presentation_message_not_allowed", reply.Rule)
+	assert.Contains(t, reply.Reason, "Se ha enviado un mensaje")
+
+	duplicate, err := eng.Evaluate(ctx, events.CommunityMessage{
+		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 52508,
+		UserID: 1, HasPhoto: true, Text: "Otra presentación",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "presentation_duplicate", duplicate.Rule)
 }
 
 func TestContestAllowsOneEntryAndRotatesByContestID(t *testing.T) {
