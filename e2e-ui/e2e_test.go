@@ -282,7 +282,7 @@ func TestSauvageOperationsPagesLoad(t *testing.T) {
 		{"/sauvage/activity", "Actividad Sauvage", "Actividad de moderación"},
 		{"/sauvage/presentations", "Presentaciones", "Presentaciones registradas"},
 		{"/sauvage/contests", "Concursos", "Participaciones en concursos"},
-		{"/sauvage/users", "Reincidencias", "Reincidencias activas"},
+		{"/sauvage/users", "Usuarios", "Usuarios de Sauvage"},
 		{"/sauvage/system", "Sistema", "Estado del sistema"},
 	}
 	for _, tt := range pages {
@@ -296,6 +296,10 @@ func TestSauvageOperationsPagesLoad(t *testing.T) {
 			waitVisible(t, page.Locator(fmt.Sprintf("h1:has-text('%s'), h2:has-text('%s')", tt.text, tt.text)))
 			if tt.path == "/sauvage" {
 				waitVisible(t, page.Locator("span:has-text('Mensajes analizados')"))
+			}
+			if tt.path == "/sauvage/users" {
+				waitVisible(t, page.Locator("input[name='q']"))
+				waitVisible(t, page.Locator("h3:has-text('Reportes recibidos')"))
 			}
 		})
 	}
