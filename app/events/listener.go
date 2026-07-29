@@ -144,9 +144,15 @@ func (l *TelegramListener) ApplyRuleSet(rs rules.RuleSet) {
 	l.SoftBanMode = rs.Moderation.SoftBan
 	l.Dry = rs.Moderation.DryRun
 
+	if executor, ok := l.ActionExecutor.(telegramActionExecutor); ok {
+		executor.dry = l.Dry
+		executor.trainingMode = l.TrainingMode
+		l.ActionExecutor = executor
+	}
 	if l.adminHandler != nil {
 		l.adminHandler.softBan = rs.Moderation.SoftBan
 		l.adminHandler.dry = rs.Moderation.DryRun
+		l.adminHandler.actions = l.ActionExecutor
 		l.adminHandler.moderation = l.ModerationConfig
 		l.adminHandler.warnDeleteDuration = rs.Moderation.WarnDeleteDuration
 	}
@@ -155,6 +161,7 @@ func (l *TelegramListener) ApplyRuleSet(rs rules.RuleSet) {
 		l.reportsHandler.moderation = l.ModerationConfig
 		l.reportsHandler.softBanMode = rs.Moderation.SoftBan
 		l.reportsHandler.dry = rs.Moderation.DryRun
+		l.reportsHandler.actions = l.ActionExecutor
 	}
 
 	profileName := rs.PolicyProfile
@@ -300,6 +307,14 @@ func (l *TelegramListener) initHandlers() {
 func (l *TelegramListener) eventLoop(ctx context.Context) error {
 	u := tbapi.NewUpdate(0)
 	u.Timeout = 60
+	// Telegram retains the previous allowed_updates selection when this field is
+	// omitted. Always send the complete set Shield consumes so a prior webhook or
+	// polling client cannot silently leave normal messages disabled.
+	u.AllowedUpdates = []string{
+		tbapi.UpdateTypeMessage,
+		tbapi.UpdateTypeEditedMessage,
+		tbapi.UpdateTypeCallbackQuery,
+	}
 
 	updates := l.TbAPI.GetUpdatesChan(u)
 	if l.OnReady != nil {
@@ -423,6 +438,10 @@ func (l *TelegramListener) handleUpdate(ctx context.Context, update tbapi.Update
 	if !fromSuper && update.Message.From != nil &&
 		l.isReportCommand(update.Message.Text) && update.Message.ReplyToMessage == nil {
 		log.Printf("[DEBUG] deleting orphaned /report command from %s (%d)", fromUserName, fromUserID)
+		if l.Dry || l.TrainingMode {
+			log.Printf("[INFO] dry/training run: would delete orphaned /report message %d", update.Message.MessageID)
+			return nil
+		}
 		_, err := l.TbAPI.Request(tbapi.DeleteMessageConfig{BaseChatMessage: tbapi.BaseChatMessage{
 			MessageID: update.Message.MessageID, ChatConfig: tbapi.ChatConfig{ChatID: update.Message.Chat.ID},
 		}})
@@ -764,8 +783,8 @@ func (l *TelegramListener) isAllowedBot(user *tbapi.User) bool {
 
 // deleteGuestBotMessage removes a single message from a non-admin bot in the primary chat and logs the outcome.
 func (l *TelegramListener) deleteGuestBotMessage(ctx context.Context, msg *tbapi.Message) {
-	if l.Dry {
-		log.Printf("[INFO] dry run: would delete guest bot message %d from %q (%d)",
+	if l.Dry || l.TrainingMode {
+		log.Printf("[INFO] dry/training run: would delete guest bot message %d from %q (%d)",
 			msg.MessageID, msg.From.UserName, msg.From.ID)
 		return
 	}
@@ -808,6 +827,10 @@ func (l *TelegramListener) handleChatReply(ctx context.Context, update tbapi.Upd
 		l.chatLimiter = &chatRateLimiter{}
 	}
 	if !l.chatLimiter.allow(update.Message.From.ID, time.Now().UTC()) {
+		if l.Dry || l.TrainingMode {
+			log.Printf("[INFO] dry/training run: would send rate-limit warning to user %d", update.Message.From.ID)
+			return true
+		}
 		msg := tbapi.NewMessage(update.Message.Chat.ID, chatLimitWarningText)
 		if sent, err := l.TbAPI.Send(msg); err == nil {
 			_, _ = l.TbAPI.Request(tbapi.DeleteMessageConfig{BaseChatMessage: tbapi.BaseChatMessage{

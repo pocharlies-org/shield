@@ -16,6 +16,7 @@ import (
 
 type sauvageOverviewView struct {
 	Snapshot        community.DashboardSnapshot
+	IncomingSummary storage.IncomingEventSummary
 	ActionSummary   storage.ModerationActionSummary
 	IncidentSummary storage.IncidentDashboardSummary
 	Actions         []storage.ModerationActionEntry
@@ -39,6 +40,11 @@ func (s *Server) htmlSauvageOverviewHandler(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "No se pudo cargar el panel de Sauvage", http.StatusInternalServerError)
 		return
 	}
+	incomingSummary, err := s.IncomingEvents.Summary(r.Context(), since)
+	if err != nil {
+		http.Error(w, "No se pudieron resumir los mensajes analizados", http.StatusInternalServerError)
+		return
+	}
 	actions, err := s.ModerationActions.Recent(r.Context(), since, 30)
 	if err != nil {
 		http.Error(w, "No se pudo cargar el diario de acciones", http.StatusInternalServerError)
@@ -55,7 +61,8 @@ func (s *Server) htmlSauvageOverviewHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err = tmpl.ExecuteTemplate(w, "sauvage.html", sauvageOverviewView{
-		Snapshot: snapshot, ActionSummary: actionSummary, IncidentSummary: incidentSummary,
+		Snapshot: snapshot, IncomingSummary: incomingSummary,
+		ActionSummary: actionSummary, IncidentSummary: incidentSummary,
 		Actions: actions, Settings: s.Settings, Days: days,
 	}); err != nil {
 		http.Error(w, "No se pudo renderizar el panel", http.StatusInternalServerError)
@@ -165,6 +172,11 @@ func (s *Server) sauvageSummaryAPIHandler(w http.ResponseWriter, r *http.Request
 		_ = rest.EncodeJSON(w, http.StatusInternalServerError, rest.JSON{"error": err.Error()})
 		return
 	}
+	incoming, err := s.IncomingEvents.Summary(r.Context(), since)
+	if err != nil {
+		_ = rest.EncodeJSON(w, http.StatusInternalServerError, rest.JSON{"error": err.Error()})
+		return
+	}
 	actions, err := s.ModerationActions.Summary(r.Context(), since)
 	if err != nil {
 		_ = rest.EncodeJSON(w, http.StatusInternalServerError, rest.JSON{"error": err.Error()})
@@ -177,6 +189,7 @@ func (s *Server) sauvageSummaryAPIHandler(w http.ResponseWriter, r *http.Request
 	}
 	_ = rest.EncodeJSON(w, http.StatusOK, map[string]any{
 		"community": snapshot,
+		"incoming":  incoming,
 		"actions":   actions,
 		"incidents": incidents,
 		"settings":  newSauvagePublicSettings(s.Settings),

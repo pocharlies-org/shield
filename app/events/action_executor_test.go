@@ -66,6 +66,46 @@ func TestTelegramActionExecutor_ApplyBan(t *testing.T) {
 	assert.Equal(t, 1, journal.calls[0].Attempt)
 }
 
+func TestTelegramActionExecutor_SimulationNeverCallsTelegram(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		dry      bool
+		training bool
+	}{
+		{name: "dry run", dry: true},
+		{name: "training mode", training: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockAPI := &mocks.TbAPIMock{}
+			journal := &moderationActionsSpy{}
+			exec := newTelegramActionExecutor(mockAPI, tc.dry, tc.training, nil, journal)
+			ctx := observability.WithModerationMetadata(context.Background(), "evt-sim", "corr-sim", "key-sim")
+
+			require.NoError(t, exec.ApplyBan(ctx, banRequest{
+				userID: 42, chatID: 123, duration: time.Hour,
+			}))
+			require.NoError(t, exec.DeleteMessage(ctx, 123, 77))
+			require.NoError(t, exec.WarnUser(ctx, warnRequest{
+				chatID: 123, subjectID: 42, messageID: 77, text: "warning",
+			}))
+			require.NoError(t, exec.ForwardMessage(ctx, 123, 456, 77))
+			require.NoError(t, exec.PostBanMessage(ctx, banMessageRequest{
+				chatID: 123, text: "ban notice",
+			}))
+
+			assert.Empty(t, mockAPI.RequestCalls(), "simulation must not call Telegram Request")
+			assert.Empty(t, mockAPI.SendCalls(), "simulation must not call Telegram Send")
+			require.Len(t, journal.calls, 3)
+			for _, entry := range journal.calls {
+				assert.Equal(t, "simulated", entry.Status)
+			}
+			assert.Equal(t, "ban_user", journal.calls[0].Command)
+			assert.Equal(t, "delete_message", journal.calls[1].Command)
+			assert.Equal(t, "warn_user", journal.calls[2].Command)
+		})
+	}
+}
+
 func TestTelegramActionExecutor_SkipCompletedReplay(t *testing.T) {
 	mockAPI := &mocks.TbAPIMock{
 		RequestFunc: func(c tbapi.Chattable) (*tbapi.APIResponse, error) {

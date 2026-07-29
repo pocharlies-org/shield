@@ -232,6 +232,7 @@ func activateServer(
 		ForwardAuthEmails:     opts.Server.ForwardAuthEmails,
 		ForwardAuthProxyCIDRs: opts.Server.ForwardAuthProxyCIDRs,
 		CommunityDashboard:    web.CommunityStore,
+		IncomingEvents:        web.IncomingEvents,
 		ModerationActions:     web.ModerationActions,
 		IncidentDashboard:     web.IncidentDashboard,
 		Version:               revision,

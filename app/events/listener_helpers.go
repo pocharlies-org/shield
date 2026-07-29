@@ -54,6 +54,10 @@ func (l *TelegramListener) procLeftChatMemberMessage(ctx context.Context, update
 		log.Printf("[DEBUG] no new chat member message found for %d in chat %d", update.Message.LeftChatMember.ID, fromChat)
 		return nil
 	}
+	if l.Dry || l.TrainingMode {
+		log.Printf("[INFO] dry/training run: would delete new chat member message %d", msg.MsgID)
+		return nil
+	}
 	if _, err := l.TbAPI.Request(tbapi.DeleteMessageConfig{
 		BaseChatMessage: tbapi.BaseChatMessage{ChatConfig: tbapi.ChatConfig{ChatID: fromChat}, MessageID: msg.MsgID},
 	}); err != nil {
@@ -64,6 +68,10 @@ func (l *TelegramListener) procLeftChatMemberMessage(ctx context.Context, update
 }
 
 func (l *TelegramListener) deleteSystemMessage(msgID int, chatID int64, msgType string) {
+	if l.Dry || l.TrainingMode {
+		log.Printf("[INFO] dry/training run: would delete %s message %d", msgType, msgID)
+		return
+	}
 	deleteMsg := tbapi.DeleteMessageConfig{
 		BaseChatMessage: tbapi.BaseChatMessage{
 			MessageID:  msgID,
@@ -148,6 +156,10 @@ const (
 
 func (l *TelegramListener) sendBotResponse(resp bot.Response, chatID int64, notifyType NotificationType) error {
 	if !resp.Send {
+		return nil
+	}
+	if l.Dry || l.TrainingMode {
+		log.Printf("[INFO] dry/training run: would send bot response to chat %d", chatID)
 		return nil
 	}
 

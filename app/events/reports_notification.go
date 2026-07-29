@@ -15,6 +15,10 @@ func (r *userReports) sendAutoBanNotification(reports []storage.Report) error {
 	if len(reports) == 0 {
 		return fmt.Errorf("no reports provided")
 	}
+	if r.dry || r.trainingMode {
+		log.Printf("[INFO] dry/training run: would send auto-ban notification")
+		return nil
+	}
 
 	firstReport := reports[0]
 	reportedUserID := firstReport.ReportedUserID
@@ -63,6 +67,10 @@ func (r *userReports) sendAutoBanNotification(reports []storage.Report) error {
 func (r *userReports) updateNotificationForAutoBan(reports []storage.Report) error {
 	if len(reports) == 0 {
 		return fmt.Errorf("reports list is empty")
+	}
+	if r.dry || r.trainingMode {
+		log.Printf("[INFO] dry/training run: would update auto-ban notification")
+		return nil
 	}
 
 	firstReport := reports[0]
@@ -119,6 +127,10 @@ func (r *userReports) updateNotificationForAutoBan(reports []storage.Report) err
 func (r *userReports) sendReportNotification(ctx context.Context, reports []storage.Report) error {
 	if len(reports) == 0 {
 		return fmt.Errorf("no reports provided")
+	}
+	if r.dry || r.trainingMode {
+		log.Printf("[INFO] dry/training run: would send report notification")
+		return nil
 	}
 	if r.adminChatID == 0 {
 		log.Printf("[DEBUG] admin chat not configured, skipping notification")
@@ -184,6 +196,10 @@ func (r *userReports) sendReportNotification(ctx context.Context, reports []stor
 func (r *userReports) updateReportNotification(_ context.Context, reports []storage.Report) error {
 	if len(reports) == 0 {
 		return fmt.Errorf("reports list is empty")
+	}
+	if r.dry || r.trainingMode {
+		log.Printf("[INFO] dry/training run: would update report notification")
+		return nil
 	}
 
 	if r.adminChatID == 0 {

@@ -105,7 +105,8 @@ func (s *Server) setupAPIRoutes(router *routegroup.Bundle) {
 		if s.MetricsCollector != nil {
 			authApi.HandleFunc("GET /api/metrics", s.metricsHandler)
 		}
-		if s.CommunityDashboard != nil && s.ModerationActions != nil && s.IncidentDashboard != nil {
+		if s.CommunityDashboard != nil && s.IncomingEvents != nil &&
+			s.ModerationActions != nil && s.IncidentDashboard != nil {
 			authApi.HandleFunc("GET /api/sauvage/summary", s.sauvageSummaryAPIHandler)
 			authApi.HandleFunc("GET /api/sauvage/events", s.sauvageEventsAPIHandler)
 			authApi.HandleFunc("GET /api/sauvage/actions", s.sauvageActionsAPIHandler)
@@ -145,7 +146,8 @@ func (s *Server) setupWebUIRoutes(router *routegroup.Bundle) {
 			webUI.HandleFunc("GET /appeals", s.htmlAppealsHandler)
 			webUI.HandleFunc("GET /feedback", s.htmlFeedbackHandler)
 		}
-		if s.CommunityDashboard != nil && s.ModerationActions != nil && s.IncidentDashboard != nil {
+		if s.CommunityDashboard != nil && s.IncomingEvents != nil &&
+			s.ModerationActions != nil && s.IncidentDashboard != nil {
 			webUI.HandleFunc("GET /sauvage", s.htmlSauvageOverviewHandler)
 			webUI.HandleFunc("GET /sauvage/activity", s.htmlSauvageActivityHandler)
 			webUI.HandleFunc("GET /sauvage/presentations", s.htmlSauvagePresentationsHandler)

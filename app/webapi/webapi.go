@@ -109,6 +109,7 @@ type Config struct {
 	RestoreProvider       RestoreService             // tenant restore from backup
 	MetricsCollector      MetricsProvider            // SLO/SLA metrics
 	CommunityDashboard    CommunityDashboardProvider // Sauvage topic-rule dashboard
+	IncomingEvents        IncomingEventsProvider     // normalized Telegram ingress dashboard
 	ModerationActions     ModerationActionsProvider  // executor action journal
 	IncidentDashboard     IncidentDashboardProvider  // aggregate incident counts without message contents
 	Dbg                   bool                       // debug mode
@@ -141,6 +142,11 @@ type CommunityDashboardProvider interface {
 	ListPresentations(ctx context.Context, limit int) ([]community.PresentationRecord, error)
 	ListContestEntries(ctx context.Context, contestID string, limit int) ([]community.ContestEntryRecord, error)
 	ListViolations(ctx context.Context, limit int) ([]community.ViolationRecord, error)
+}
+
+// IncomingEventsProvider exposes aggregate normalized Telegram ingress data.
+type IncomingEventsProvider interface {
+	Summary(ctx context.Context, since time.Time) (storage.IncomingEventSummary, error)
 }
 
 // ModerationActionsProvider exposes the durable Telegram action journal.

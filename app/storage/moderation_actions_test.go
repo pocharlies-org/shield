@@ -117,6 +117,35 @@ func TestModerationActionsLast(t *testing.T) {
 	assert.Empty(t, replay.LastError)
 }
 
+func TestModerationActionsSimulatedCountsAsTerminal(t *testing.T) {
+	db, err := engine.NewSqlite(":memory:", "gr1")
+	require.NoError(t, err)
+	defer db.Close()
+
+	store, err := NewModerationActions(context.Background(), db)
+	require.NoError(t, err)
+	err = store.Add(context.Background(), ModerationActionEntry{
+		EventID: "evt-sim", IdempotencyKey: "key-sim", Command: "warn_user",
+		Status: "simulated", ChatID: 123, SubjectID: 42, MessageID: 77,
+	})
+	require.NoError(t, err)
+
+	summary, err := store.Summary(context.Background(), time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, summary.Total)
+	assert.Equal(t, 1, summary.Simulated)
+	assert.Equal(t, 0, summary.Completed)
+	assert.Equal(t, 0, summary.Failed)
+
+	replay, err := store.Last(context.Background(), ModerationActionLookup{
+		IdempotencyKey: "key-sim", Command: "warn_user",
+		ChatID: 123, SubjectID: 42, MessageID: 77,
+	})
+	require.NoError(t, err)
+	assert.True(t, replay.Found)
+	assert.True(t, replay.Completed)
+}
+
 func TestModerationActionsMigrateFromOldSchema(t *testing.T) {
 	db, err := engine.NewSqlite(":memory:", "gr1")
 	require.NoError(t, err)

@@ -29,10 +29,12 @@
     {{end}}
 
     <div class="metric-grid">
+        <div class="metric-card"><span>Mensajes analizados</span><strong>{{.IncomingSummary.Total}}</strong><small>{{.IncomingSummary.Processed}} procesados · {{.IncomingSummary.Pending}} pendientes</small></div>
+        <div class="metric-card"><span>Decisiones globales</span><strong>{{.IncomingSummary.Allowed}}</strong><small>{{.IncomingSummary.Warned}} avisos · {{.IncomingSummary.Errors}} errores</small></div>
         <div class="metric-card"><span>Decisiones de topic</span><strong>{{.Snapshot.Summary.TotalEvents}}</strong><small>{{.Snapshot.Summary.Allowed}} permitidas</small></div>
         <div class="metric-card"><span>Infracciones simuladas</span><strong>{{.Snapshot.Summary.ShadowViolations}}</strong><small>sin acción real</small></div>
         <div class="metric-card"><span>Infracciones activas</span><strong>{{.Snapshot.Summary.LiveViolations}}</strong><small>reglas de comunidad</small></div>
-        <div class="metric-card"><span>Acciones Telegram</span><strong>{{.ActionSummary.Total}}</strong><small>{{.ActionSummary.Completed}} correctas · {{.ActionSummary.Failed}} fallidas</small></div>
+        <div class="metric-card"><span>Acciones Telegram</span><strong>{{.ActionSummary.Total}}</strong><small>{{.ActionSummary.Simulated}} simuladas · {{.ActionSummary.Completed}} reales · {{.ActionSummary.Failed}} fallidas</small></div>
         <div class="metric-card"><span>Presentaciones</span><strong>{{.Snapshot.Summary.Presentations}}</strong><small>personas registradas</small></div>
         <div class="metric-card"><span>Participaciones</span><strong>{{.Snapshot.Summary.ContestEntries}}</strong><small>todos los concursos</small></div>
         <div class="metric-card"><span>Incidentes Ornith</span><strong>{{.IncidentSummary.LLM}}</strong><small>{{.Days}} días</small></div>
@@ -96,7 +98,7 @@
                 <tr>
                     <td class="nowrap">{{.CreatedAt.Format "02/01 15:04:05"}}</td><td><code>{{.Command}}</code></td>
                     <td>{{.SubjectID}}</td><td>{{.MessageID}}</td><td>{{.Attempt}}</td>
-                    <td>{{if eq .Status "completed"}}<span class="badge badge-ham">correcto</span>{{else}}<span class="badge badge-spam">fallido</span>{{end}}</td>
+                    <td>{{if eq .Status "completed"}}<span class="badge badge-ham">correcto</span>{{else if eq .Status "simulated"}}<span class="badge badge-info">simulado</span>{{else}}<span class="badge badge-spam">fallido</span>{{end}}</td>
                     <td class="truncate text-danger">{{.LastError}}</td>
                 </tr>
                 {{else}}<tr><td colspan="7" class="center-text muted">No hay acciones; esto es normal en dry-run</td></tr>{{end}}

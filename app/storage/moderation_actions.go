@@ -123,6 +123,7 @@ type ModerationActionReplay struct {
 type ModerationActionSummary struct {
 	Total     int `db:"total"`
 	Completed int `db:"completed"`
+	Simulated int `db:"simulated"`
 	Failed    int `db:"failed"`
 }
 
@@ -245,6 +246,7 @@ func (m *ModerationActions) Summary(ctx context.Context, since time.Time) (Moder
 
 	query := `SELECT COUNT(*) AS total,
 		COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
+		COALESCE(SUM(CASE WHEN status = 'simulated' THEN 1 ELSE 0 END), 0) AS simulated,
 		COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed
 		FROM moderation_actions WHERE tenant_id = ?`
 	args := []any{m.TenantID()}
@@ -287,7 +289,7 @@ func (m *ModerationActions) Last(ctx context.Context, lookup ModerationActionLoo
 
 	return ModerationActionReplay{
 		Found:     true,
-		Completed: entry.Status == "completed",
+		Completed: entry.Status == "completed" || entry.Status == "simulated",
 		Attempt:   entry.Attempt,
 		LastError: entry.LastError,
 	}, nil

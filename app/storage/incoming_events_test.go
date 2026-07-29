@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -200,4 +201,46 @@ func TestIncomingEventsReserveAllowsRetryAfterFailedAction(t *testing.T) {
 	assert.False(t, record.ProcessedAt.Valid)
 	assert.Equal(t, "ban", record.DecisionAction)
 	assert.Equal(t, "telegram timeout", record.ActionError)
+}
+
+func TestIncomingEventsSummary(t *testing.T) {
+	db, err := engine.NewSqlite(":memory:", "gr1")
+	require.NoError(t, err)
+	defer db.Close()
+
+	store, err := NewIncomingEvents(context.Background(), db)
+	require.NoError(t, err)
+	now := time.Now().UTC()
+
+	for idx, action := range []moderation.Action{
+		moderation.ActionAllow,
+		moderation.ActionWarn,
+		moderation.ActionBan,
+	} {
+		key := fmt.Sprintf("summary-%d", idx)
+		_, err = store.Record(context.Background(), moderation.IncomingEvent{
+			EventID: key, Source: "telegram.update", ChatID: 123,
+			MessageID: idx + 1, IdempotencyKey: key, ReceivedAt: now,
+		})
+		require.NoError(t, err)
+		err = store.Complete(context.Background(), key,
+			moderation.PolicyDecision{Action: action, DecidedAt: now},
+			moderation.ModerationActionResult{Action: action, Applied: true, AppliedAt: now},
+		)
+		require.NoError(t, err)
+	}
+	_, err = store.Record(context.Background(), moderation.IncomingEvent{
+		EventID: "pending", Source: "telegram.update", ChatID: 123,
+		MessageID: 4, IdempotencyKey: "pending", ReceivedAt: now,
+	})
+	require.NoError(t, err)
+
+	summary, err := store.Summary(context.Background(), now.Add(-time.Minute))
+	require.NoError(t, err)
+	assert.Equal(t, 4, summary.Total)
+	assert.Equal(t, 3, summary.Processed)
+	assert.Equal(t, 1, summary.Pending)
+	assert.Equal(t, 1, summary.Allowed)
+	assert.Equal(t, 1, summary.Warned)
+	assert.Equal(t, 1, summary.Banned)
 }
