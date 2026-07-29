@@ -14,14 +14,21 @@ import (
 	tbapi "github.com/OvyFlash/telegram-bot-api"
 )
 
-const sauvageRulesText = `Normas básicas de Sauvage:
+//nolint:misspell // The text is Spanish, while the repository spell checker is English.
+const sauvageRulesText = "Normas básicas de Sauvage:\n\n" +
+	"• Trata a las demás personas con respeto. No se permiten insultos, acoso, humillaciones ni ataques.\n" +
+	"• No difundas ni comentes la vida privada de otra persona.\n" +
+	"• Es una comunidad de adultos: el consentimiento, los límites y la privacidad son obligatorios.\n" +
+	"• En Presentaciones solo se publica una presentación real por persona, con foto y texto. " +
+	"No se conversa ni se responde en ese topic.\n" +
+	"• En cada concurso solo se admite una participación de fotos por persona.\n" +
+	"• Si tienes un problema con alguien, usa /reportar en privado. " +
+	"El reporte queda para revisión del equipo y no aplica sanciones automáticamente."
 
-• Trata a las demás personas con respeto. No se permiten insultos, acoso, humillaciones ni ataques.
-• No difundas ni comentes la vida privada de otra persona.
-• Es una comunidad de adultos: el consentimiento, los límites y la privacidad son obligatorios.
-• En Presentaciones solo se publica una presentación real por persona, con foto y texto. No se conversa ni se responde en ese topic.
-• En cada concurso solo se admite una participación de fotos por persona.
-• Si tienes un problema con alguien, usa /reportar en privado. El reporte queda para revisión del equipo y no aplica sanciones automáticamente.`
+const sauvageMenuText = "Puedo ayudarte con tres cosas:\n\n" +
+	"/normas — ver las normas\n" +
+	"/mipresentacion — comprobar tu presentación\n" +
+	"/reportar — reportar a una persona"
 
 type privateReportStage int
 
@@ -80,7 +87,7 @@ func (a *communityPrivateAssistant) Handle(ctx context.Context, msg *tbapi.Messa
 	switch command {
 	case "start":
 		a.clearState(msg.From.ID)
-		return a.reply(msg.Chat.ID, "Puedo ayudarte con tres cosas:\n\n/normas — ver las normas\n/mipresentacion — comprobar tu presentación\n/reportar — reportar a una persona")
+		return a.reply(msg.Chat.ID, sauvageMenuText)
 	case "normas":
 		a.clearState(msg.From.ID)
 		return a.reply(msg.Chat.ID, sauvageRulesText)
@@ -150,7 +157,11 @@ func (a *communityPrivateAssistant) beginReportByUsername(
 		return fmt.Errorf("resolve reported username: %w", err)
 	}
 	if !found {
-		return a.reply(msg.Chat.ID, "No encuentro a @"+username+" entre los usuarios observados. Reenvíame un mensaje suyo para identificarlo.")
+		return a.reply(
+			msg.Chat.ID,
+			"No encuentro a @"+username+" entre los usuarios observados. "+
+				"Reenvíame un mensaje suyo para identificarlo.",
+		)
 	}
 	return a.beginReportForTarget(msg, target, 0, 0)
 }
@@ -168,7 +179,11 @@ func (a *communityPrivateAssistant) beginReportForTarget(
 		stage: reportAwaitingReason, target: target,
 		sourceMessageID: sourceMessageID, sourceThreadID: sourceThreadID,
 	})
-	return a.reply(msg.Chat.ID, "Vas a reportar a "+communityMemberLabel(target)+". Escribe ahora el motivo con el detalle necesario.")
+	return a.reply(
+		msg.Chat.ID,
+		"Vas a reportar a "+communityMemberLabel(target)+
+			". Escribe ahora el motivo con el detalle necesario.",
+	)
 }
 
 func (a *communityPrivateAssistant) finishReport(
@@ -185,7 +200,7 @@ func (a *communityPrivateAssistant) finishReport(
 	if err != nil {
 		return fmt.Errorf("create report key: %w", err)
 	}
-	reporterName := strings.TrimSpace(strings.Join([]string{msg.From.FirstName, msg.From.LastName}, " "))
+	reporterName := strings.TrimSpace(msg.From.FirstName + " " + msg.From.LastName)
 	report := CommunityUserReport{
 		ReportKey: key, ChatID: a.chatID,
 		ReporterUserID: msg.From.ID, ReporterUserName: msg.From.UserName, ReporterDisplayName: reporterName,
@@ -198,7 +213,11 @@ func (a *communityPrivateAssistant) finishReport(
 		return fmt.Errorf("store community user report: %w", err)
 	}
 	a.clearState(msg.From.ID)
-	return a.reply(msg.Chat.ID, "Reporte guardado. El equipo podrá verlo en el panel. No se aplicará ninguna sanción automática.")
+	return a.reply(
+		msg.Chat.ID,
+		"Reporte guardado. El equipo podrá verlo en el panel. "+
+			"No se aplicará ninguna sanción automática.",
+	)
 }
 
 func forwardedCommunityMember(msg *tbapi.Message) (CommunityMember, bool) {
@@ -209,7 +228,7 @@ func forwardedCommunityMember(msg *tbapi.Message) (CommunityMember, bool) {
 	user := msg.ForwardOrigin.SenderUser
 	return CommunityMember{
 		UserID: user.ID, UserName: user.UserName,
-		DisplayName: strings.TrimSpace(strings.Join([]string{user.FirstName, user.LastName}, " ")),
+		DisplayName: strings.TrimSpace(user.FirstName + " " + user.LastName),
 	}, true
 }
 

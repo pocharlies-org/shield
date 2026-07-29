@@ -36,7 +36,7 @@ func TestMemberDirectoryTracksIdentityPresentationWarningsAndReports(t *testing.
 		ReportKey: "report-1", ChatID: -1001,
 		ReporterUserID: 7, ReporterUserName: "reporter",
 		ReportedUserID: 42, ReportedUserName: "ana", ReportedDisplayName: "Ana Real",
-		Reason: "Me ha escrito de forma insistente", CreatedAt: now.Add(2 * time.Minute),
+		Reason: "Me ha escrito repetidamente", CreatedAt: now.Add(2 * time.Minute),
 	}))
 
 	members, err := store.ListMembers(ctx, MemberFilter{ChatID: -1001, Query: "@ana", Limit: 10})
@@ -52,7 +52,7 @@ func TestMemberDirectoryTracksIdentityPresentationWarningsAndReports(t *testing.
 	reports, err := store.ListUserReports(ctx, UserReportFilter{ReportedUserID: 42, Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, reports, 1)
-	assert.Equal(t, "Me ha escrito de forma insistente", reports[0].Reason)
+	assert.Equal(t, "Me ha escrito repetidamente", reports[0].Reason)
 }
 
 func TestOlderMemberObservationDoesNotRegressLastMessage(t *testing.T) {

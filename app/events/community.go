@@ -107,7 +107,7 @@ func (l *TelegramListener) handleCommunityMessage(ctx context.Context, update tb
 	if msg.From != nil {
 		userID = msg.From.ID
 		userName = msg.From.UserName
-		displayName = strings.TrimSpace(strings.Join([]string{msg.From.FirstName, msg.From.LastName}, " "))
+		displayName = strings.TrimSpace(msg.From.FirstName + " " + msg.From.LastName)
 		if displayName == "" {
 			displayName = userName
 		}

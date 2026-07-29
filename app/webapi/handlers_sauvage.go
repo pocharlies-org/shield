@@ -149,7 +149,7 @@ func (s *Server) htmlSauvageUsersHandler(w http.ResponseWriter, r *http.Request)
 	}
 	reports, err := s.CommunityDashboard.ListUserReports(r.Context(), community.UserReportFilter{Limit: 100})
 	if err != nil {
-		http.Error(w, "No se pudieron cargar los reportes", http.StatusInternalServerError)
+		http.Error(w, "No se pudo cargar la información de avisos", http.StatusInternalServerError)
 		return
 	}
 	data := struct {
@@ -184,7 +184,7 @@ func (s *Server) htmlSauvageUserDetailHandler(w http.ResponseWriter, r *http.Req
 		ChatID: members[0].ChatID, ReportedUserID: userID, Limit: 200,
 	})
 	if err != nil {
-		http.Error(w, "No se pudieron cargar los reportes del usuario", http.StatusInternalServerError)
+		http.Error(w, "No se pudo cargar la información del usuario", http.StatusInternalServerError)
 		return
 	}
 	events, err := s.CommunityDashboard.ListRuleEvents(r.Context(), community.RuleEventFilter{

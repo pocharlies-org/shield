@@ -215,7 +215,8 @@ func (e *Engine) evaluatePresentation(
 	if msg.IsReply || !msg.HasPhoto || msg.HasVideo {
 		return e.violation(ctx, msg, "presentation_message_not_allowed",
 			"Se ha enviado un mensaje en Presentaciones; aquí solo se permiten presentaciones reales con foto y texto.",
-			"En Presentaciones solo se permite publicar una presentación real con foto y texto. No se permiten respuestas, conversación, texto suelto ni vídeos.")
+			"En Presentaciones solo se permite publicar una presentación real con foto y texto. "+
+				"No se permiten respuestas, conversación, texto suelto ni vídeos.")
 	}
 	if e.config.RequirePresentationText && msg.MediaGroupID == "" && strings.TrimSpace(msg.Text) == "" {
 		return e.violation(ctx, msg, "presentation_incomplete", "Se ha publicado una foto sin texto de presentación.",

@@ -219,7 +219,8 @@ func (s *Store) ListMembers(ctx context.Context, filter MemberFilter) ([]MemberR
 		  ON p.tenant_id = m.tenant_id AND p.chat_id = m.chat_id AND p.user_id = m.user_id
 		WHERE ` + strings.Join(where, " AND ") + `
 		ORDER BY m.last_message_at DESC LIMIT ?`)
-	queryArgs := []any{false, true}
+	queryArgs := make([]any, 0, 2+len(args))
+	queryArgs = append(queryArgs, false, true)
 	queryArgs = append(queryArgs, args...)
 	var records []MemberRecord
 	if err := s.db.SelectContext(ctx, &records, query, queryArgs...); err != nil {
