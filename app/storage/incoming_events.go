@@ -183,6 +183,20 @@ type IncomingEventReplay struct {
 	ActionResult moderation.ModerationActionResult
 }
 
+// IncomingEventSummary contains aggregate ingress and decision counts for the
+// operations dashboard. It never exposes message contents or user identifiers.
+type IncomingEventSummary struct {
+	Total      int `db:"total"`
+	Processed  int `db:"processed"`
+	Pending    int `db:"pending"`
+	Allowed    int `db:"allowed"`
+	Warned     int `db:"warned"`
+	Deleted    int `db:"deleted"`
+	Restricted int `db:"restricted"`
+	Banned     int `db:"banned"`
+	Errors     int `db:"errors"`
+}
+
 // IncomingEvents persists normalized ingress events keyed by idempotency key.
 type IncomingEvents struct {
 	*engine.SQL
@@ -408,4 +422,32 @@ func (s *IncomingEvents) ByIdempotencyKey(ctx context.Context, key string) (Inco
 		return IncomingEventRecord{}, fmt.Errorf("failed to load incoming event: %w", err)
 	}
 	return record, nil
+}
+
+// Summary returns bounded ingress and policy-decision totals for the current tenant.
+func (s *IncomingEvents) Summary(ctx context.Context, since time.Time) (IncomingEventSummary, error) {
+	s.RLock()
+	defer s.RUnlock()
+
+	query := `SELECT COUNT(*) AS total,
+		COALESCE(SUM(CASE WHEN processed_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS processed,
+		COALESCE(SUM(CASE WHEN processed_at IS NULL THEN 1 ELSE 0 END), 0) AS pending,
+		COALESCE(SUM(CASE WHEN decision_action = 'allow' THEN 1 ELSE 0 END), 0) AS allowed,
+		COALESCE(SUM(CASE WHEN decision_action = 'warn' THEN 1 ELSE 0 END), 0) AS warned,
+		COALESCE(SUM(CASE WHEN decision_action = 'delete' THEN 1 ELSE 0 END), 0) AS deleted,
+		COALESCE(SUM(CASE WHEN decision_action = 'restrict' THEN 1 ELSE 0 END), 0) AS restricted,
+		COALESCE(SUM(CASE WHEN decision_action = 'ban' THEN 1 ELSE 0 END), 0) AS banned,
+		COALESCE(SUM(CASE WHEN action_error <> '' THEN 1 ELSE 0 END), 0) AS errors
+		FROM incoming_events WHERE tenant_id = ?`
+	args := []any{s.TenantID()}
+	if !since.IsZero() {
+		query += " AND received_at >= ?"
+		args = append(args, since.UTC())
+	}
+
+	var summary IncomingEventSummary
+	if err := s.GetContext(ctx, &summary, s.Adopt(query), args...); err != nil {
+		return IncomingEventSummary{}, fmt.Errorf("summarize incoming events: %w", err)
+	}
+	return summary, nil
 }

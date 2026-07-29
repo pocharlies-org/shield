@@ -84,6 +84,7 @@ type webRuntimeAssembly struct {
 	Metrics              *observability.Metrics
 	BotUsername          string
 	CommunityStore       *community.Store
+	IncomingEvents       *storage.IncomingEvents
 	ModerationActions    *storage.ModerationActions
 	IncidentDashboard    *storage.IncidentStorage
 }
@@ -347,6 +348,7 @@ func assembleRuntime(ctx context.Context, opts options) (*runtimeAssembly, error
 			RestoreProvider:      &restoreProviderAdapter{svc: restoreSvc},
 			Metrics:              metrics,
 			CommunityStore:       communityStore,
+			IncomingEvents:       incomingEventsStore,
 			ModerationActions:    moderationActionsStore,
 			IncidentDashboard:    incidentsStore,
 		},

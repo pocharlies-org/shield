@@ -48,6 +48,11 @@ func (e telegramActionExecutor) ApplyBan(ctx context.Context, req banRequest) er
 	if replayed {
 		return nil
 	}
+	if e.isSimulation() {
+		observability.Logf(ctx, "[INFO] dry/training run: would execute %s for subject %d", command, subjectID)
+		e.recordSimulatedAction(ctx, command, req.chatID, subjectID, 0, attempt)
+		return nil
+	}
 
 	req.tbAPI = e.tbAPI
 	err := banUserOrChannel(ctx, req)
@@ -58,6 +63,11 @@ func (e telegramActionExecutor) ApplyBan(ctx context.Context, req banRequest) er
 func (e telegramActionExecutor) DeleteMessage(ctx context.Context, chatID int64, msgID int) error {
 	attempt, replayed := e.replayAttempt(ctx, commandDeleteMessage, chatID, 0, msgID)
 	if replayed {
+		return nil
+	}
+	if e.isSimulation() {
+		observability.Logf(ctx, "[INFO] dry/training run: would delete message %d", msgID)
+		e.recordSimulatedAction(ctx, commandDeleteMessage, chatID, 0, msgID, attempt)
 		return nil
 	}
 
@@ -76,6 +86,10 @@ func (e telegramActionExecutor) DeleteMessage(ctx context.Context, chatID int64,
 }
 
 func (e telegramActionExecutor) ForwardMessage(ctx context.Context, fromChatID, toChatID int64, msgID int) error {
+	if e.isSimulation() {
+		observability.Logf(ctx, "[INFO] dry/training run: would forward message %d to admin chat %d", msgID, toChatID)
+		return nil
+	}
 	_, err := e.tbAPI.Send(tbapi.NewForward(toChatID, fromChatID, msgID))
 	if err != nil {
 		observability.Logf(ctx, "[WARN] failed to forward message %d to admin chat %d: %v", msgID, toChatID, err)
@@ -118,6 +132,11 @@ func (e telegramActionExecutor) WarnUser(ctx context.Context, req warnRequest) e
 	if replayed {
 		return nil
 	}
+	if e.isSimulation() {
+		observability.Logf(ctx, "[INFO] dry/training run: would warn subject %d", req.subjectID)
+		e.recordSimulatedAction(ctx, commandWarnUser, req.chatID, req.subjectID, req.messageID, attempt)
+		return nil
+	}
 
 	msgConfig := tbapi.NewMessage(req.chatID, req.text)
 	msgConfig.MessageThreadID = req.threadID
@@ -158,6 +177,10 @@ func (e telegramActionExecutor) scheduleDelete(ctx context.Context, chatID int64
 // PostBanMessage posts a short ban notice to the group chat carrying the
 // appeal button and schedules its deletion the same way a warning is deleted.
 func (e telegramActionExecutor) PostBanMessage(ctx context.Context, req banMessageRequest) error {
+	if e.isSimulation() {
+		observability.Logf(ctx, "[INFO] dry/training run: would post ban notice to chat %d", req.chatID)
+		return nil
+	}
 	msgConfig := tbapi.NewMessage(req.chatID, req.text)
 	msgConfig.MessageThreadID = req.threadID
 	msgConfig.ParseMode = tbapi.ModeHTML
@@ -180,8 +203,13 @@ const (
 	commandBanSenderChat  = "ban_sender_chat"
 	commandWarnUser       = "warn_user"
 	actionStatusCompleted = "completed"
+	actionStatusSimulated = "simulated"
 	actionStatusFailed    = "failed"
 )
+
+func (e telegramActionExecutor) isSimulation() bool {
+	return e.dry || e.trainingMode
+}
 
 func banCommand(req banRequest) string {
 	switch {
@@ -258,6 +286,29 @@ func (e telegramActionExecutor) recordAction(ctx context.Context,
 	}
 	if err := e.actions.Add(ctx, entry); err != nil {
 		observability.Logf(ctx, "[WARN] failed to record moderation action %s: %v", command, err)
+	}
+}
+
+func (e telegramActionExecutor) recordSimulatedAction(ctx context.Context,
+	command string, chatID, subjectID int64, msgID, attempt int,
+) {
+	if e.actions == nil {
+		return
+	}
+	meta, _ := observability.MetadataFromContext(ctx)
+	entry := storage.ModerationActionEntry{
+		EventID:        meta.EventID,
+		CorrelationID:  meta.CorrelationID,
+		IdempotencyKey: meta.IdempotencyKey,
+		Command:        command,
+		Status:         actionStatusSimulated,
+		ChatID:         chatID,
+		SubjectID:      subjectID,
+		MessageID:      msgID,
+		Attempt:        attempt,
+	}
+	if err := e.actions.Add(ctx, entry); err != nil {
+		observability.Logf(ctx, "[WARN] failed to record simulated moderation action %s: %v", command, err)
 	}
 }
 

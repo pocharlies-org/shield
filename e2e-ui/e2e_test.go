@@ -294,6 +294,9 @@ func TestSauvageOperationsPagesLoad(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, title, tt.title)
 			waitVisible(t, page.Locator(fmt.Sprintf("h1:has-text('%s'), h2:has-text('%s')", tt.text, tt.text)))
+			if tt.path == "/sauvage" {
+				waitVisible(t, page.Locator("span:has-text('Mensajes analizados')"))
+			}
 		})
 	}
 }
@@ -306,6 +309,7 @@ func TestSauvageSummaryDoesNotExposePrivateSettings(t *testing.T) {
 	body, err := page.Locator("body").TextContent()
 	require.NoError(t, err)
 	assert.Contains(t, body, `"model":"gpt-4o-mini"`)
+	assert.Contains(t, body, `"incoming"`)
 	assert.NotContains(t, body, "openai_custom_prompts")
 	assert.NotContains(t, body, "super_users")
 	assert.NotContains(t, body, "admin_group")
