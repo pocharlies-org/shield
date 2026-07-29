@@ -169,6 +169,16 @@ type options struct {
 		DashboardURL               string   `long:"dashboard-url" env:"DASHBOARD_URL" description:"dashboard link included in the daily digest"`
 	} `group:"community" namespace:"community" env-namespace:"COMMUNITY"`
 
+	Backfill struct {
+		Only           bool          `long:"only" env:"ONLY" description:"run the historical analysis and exit"`
+		SourceDB       string        `long:"source-db" env:"SOURCE_DB" description:"read-only social-media archive database URL"`
+		Account        string        `long:"account" env:"ACCOUNT" default:"personal" description:"archive account to read"`
+		ConversationID string        `long:"conversation-id" env:"CONVERSATION_ID" description:"archived Telegram conversation id"`
+		Lookback       time.Duration `long:"lookback" env:"LOOKBACK" default:"168h" description:"historical window to analyze"`
+		Topics         []int         `long:"topic" env:"TOPICS" env-delim:"," description:"forum topic ids to analyze; defaults to presentation and contest topics"`
+		AlbumWindow    time.Duration `long:"album-window" env:"ALBUM_WINDOW" default:"2s" description:"maximum gap between archived photos in one reconstructed album"`
+	} `group:"backfill" namespace:"backfill" env-namespace:"BACKFILL"`
+
 	Files struct {
 		SamplesDataPath string        `long:"samples" env:"SAMPLES" description:"samples data path, defaults to dynamic data path"`
 		DynamicDataPath string        `long:"dynamic" env:"DYNAMIC" default:"data" description:"dynamic data path"`
@@ -269,7 +279,7 @@ func main() {
 
 	masked := []string{
 		opts.Telegram.Token, opts.OpenAI.Token, opts.Gemini.Token,
-		opts.DataBaseURL, opts.CAS.API, opts.CAS.UserAgent,
+		opts.DataBaseURL, opts.Backfill.SourceDB, opts.CAS.API, opts.CAS.UserAgent,
 	}
 	if opts.Server.AuthPasswd != "auto" && opts.Server.AuthPasswd != "" {
 		// auto passwd should not be masked as we print it
@@ -320,9 +330,13 @@ func execute(ctx context.Context, opts options) error {
 	}
 
 	convertOnly := opts.Convert == "only"
+	backfillOnly := opts.Backfill.Only
 	hasGroup := opts.Telegram.Group != "" || len(opts.Telegram.Groups) > 0
-	if !opts.Server.Enabled && !convertOnly && (opts.Telegram.Token == "" || !hasGroup) {
+	if !opts.Server.Enabled && !convertOnly && !backfillOnly && (opts.Telegram.Token == "" || !hasGroup) {
 		return errors.New("telegram token and group are required")
+	}
+	if backfillOnly && strings.TrimSpace(opts.Backfill.SourceDB) == "" {
+		return errors.New("historical backfill requires BACKFILL_SOURCE_DB")
 	}
 
 	checkVolumeMount(opts) // show warning if dynamic files dir not mounted
@@ -343,6 +357,9 @@ func execute(ctx context.Context, opts options) error {
 	defer assembly.close()
 	if opts.Convert == "only" {
 		return nil
+	}
+	if backfillOnly {
+		return runCommunityHistoryBackfill(ctx, opts, assembly)
 	}
 
 	if assembly.RetentionSvc != nil {

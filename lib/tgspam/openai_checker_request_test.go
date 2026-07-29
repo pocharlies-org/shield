@@ -59,6 +59,34 @@ func TestCustomPromptsInActualRequest(t *testing.T) {
 	}
 }
 
+func TestRequireModerationCategoryFailsOpen(t *testing.T) {
+	response := `{"spam":true,"reason":"mensaje sospechoso","confidence":95}`
+	clientMock := &mocks.OpenAIClientMock{
+		CreateChatCompletionFunc: func(
+			_ context.Context, _ openai.ChatCompletionRequest,
+		) (openai.ChatCompletionResponse, error) {
+			return openai.ChatCompletionResponse{
+				Choices: []openai.ChatCompletionChoice{{
+					Message: openai.ChatCompletionMessage{Content: response},
+				}},
+			}, nil
+		},
+	}
+	checker := newOpenAIChecker(clientMock, OpenAIConfig{
+		RequireModerationCategory: true,
+	})
+
+	spam, details := checker.check(context.Background(), "mensaje ambiguo", llmContext{})
+	assert.False(t, spam)
+	assert.Error(t, details.Error)
+	assert.Contains(t, details.Details, "allowed moderation category")
+
+	response = `{"spam":true,"reason":"INSULT: insulto dirigido","confidence":95}`
+	spam, details = checker.check(context.Background(), "insulto", llmContext{})
+	assert.True(t, spam)
+	assert.NoError(t, details.Error)
+}
+
 func TestIsReasoningModel(t *testing.T) {
 	tests := []struct {
 		name     string
