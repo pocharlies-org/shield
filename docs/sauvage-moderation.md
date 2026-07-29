@@ -96,6 +96,36 @@ Ingress records include topic and media-group identifiers for traceability. Rete
 real timestamp columns and propagates SQL errors instead of silently reporting success. Back up the
 database before changing the active contest or enabling actions, and test restore before rollout.
 
+## Historical backfill
+
+Telegram Bot API polling cannot request arbitrary old messages. Shield can run a one-shot,
+idempotent historical analysis against the internal social-media PostgreSQL archive instead:
+
+```env
+BACKFILL_ONLY=true
+BACKFILL_SOURCE_DB=postgres://read-only-user:secret@archive-db/whatsappmcp
+BACKFILL_ACCOUNT=personal
+BACKFILL_CONVERSATION_ID=tg_-1003672565710
+BACKFILL_LOOKBACK=168h
+BACKFILL_TOPICS=3,6
+BACKFILL_ALBUM_WINDOW=2s
+LLM_HISTORY_CONTEXT_SIZE=0
+DRY=true
+COMMUNITY_APPLY_ACTIONS=false
+```
+
+The one-shot process refuses to start unless global dry mode and community shadow mode are both
+active. It reads inbound archive rows chronologically, reconstructs Telegram photo albums, skips
+message ids that already exist in `incoming_events`, and uses archive-scoped idempotency keys.
+Topic rules receive the original photo/video metadata while Ornith reviews stored text and captions
+without trying to download expired Telegram media. The process exits after analysis and never
+starts a Telegram poller or web server.
+
+Keep chat-history context disabled for a historical topic run. A presentation topic contains many
+unrelated profiles; treating previous members' profiles as context for the current member creates
+false associations. The Sauvage Ornith prompt also requires an explicit moderation category before
+accepting `spam:true`, so vague model labels fail open.
+
 ## Operational dashboard and SSO
 
 Enable the built-in dashboard with `SERVER_ENABLED=true`. The Sauvage deployment uses Keycloak

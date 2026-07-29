@@ -305,6 +305,7 @@ func applyLLMCheckers(detector *tgspam.Detector, opts options, ruleSet rules.Rul
 			RetryCount:                   opts.OpenAI.RetryCount,
 			ReasoningEffort:              opts.OpenAI.ReasoningEffort,
 			CheckShortMessagesWithOpenAI: ruleSet.OpenAI.CheckShortMessages,
+			RequireModerationCategory:    opts.Community.Enabled,
 		}
 		config := openai.DefaultConfig(opts.OpenAI.Token)
 		if opts.OpenAI.APIBase != "" {
