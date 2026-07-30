@@ -178,6 +178,45 @@ func TestViolationsEscalateAndShadowDoesNotEnforce(t *testing.T) {
 	assert.False(t, decision.Enforce)
 }
 
+func TestAlbumViolationCountsOnceAndCollapsesToOneDashboardEvent(t *testing.T) {
+	eng := newTestEngine(t, Config{
+		Enabled: true, ChatID: -1001, PresentationThreadID: 3, ContestThreadID: 6,
+		ContestID: "summer-2026",
+	})
+	ctx := context.Background()
+	first, err := eng.Evaluate(ctx, events.CommunityMessage{
+		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 100,
+		MediaGroupID: "album-reply", UserID: 91, HasPhoto: true, IsReply: true,
+		Text: "Mensaje literal del álbum",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, moderation.ActionWarn, first.Action)
+	assert.False(t, first.GroupedContinuation)
+
+	second, err := eng.Evaluate(ctx, events.CommunityMessage{
+		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 101,
+		MediaGroupID: "album-reply", UserID: 91, HasPhoto: true, IsReply: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, moderation.ActionWarn, second.Action)
+	assert.True(t, second.GroupedContinuation)
+
+	eventsList, err := eng.store.ListRuleEvents(ctx, RuleEventFilter{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, eventsList, 1)
+	assert.Equal(t, 100, eventsList[0].MessageID)
+	assert.Equal(t, "Mensaje literal del álbum", eventsList[0].MessageText)
+	assert.Equal(t, "album-reply", eventsList[0].MediaGroupID)
+	assert.Equal(t, 1, eventsList[0].GroupSize)
+
+	next, err := eng.Evaluate(ctx, events.CommunityMessage{
+		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 102,
+		UserID: 91, Text: "otra conversación",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, moderation.ActionRestrict, next.Action)
+}
+
 func TestShadowViolationsDoNotPreloadLiveStrikes(t *testing.T) {
 	db := newTestDB(t)
 	store, err := NewStore(context.Background(), db)

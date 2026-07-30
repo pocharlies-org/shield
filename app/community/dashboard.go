@@ -36,14 +36,17 @@ type RuleEvent struct {
 	ChatID         int64     `db:"chat_id"`
 	ThreadID       int       `db:"thread_id"`
 	MessageID      int       `db:"message_id"`
+	MediaGroupID   string    `db:"media_group_id" json:"-"`
 	UserID         int64     `db:"user_id"`
 	UserName       string    `db:"username"`
 	DisplayName    string    `db:"display_name"`
 	RuleCode       string    `db:"rule_code"`
 	Action         string    `db:"action"`
 	Reason         string    `db:"reason"`
+	MessageText    string    `db:"message_text" json:"-"`
 	UserMessage    string    `db:"user_message"`
 	DurationSecond int64     `db:"duration_seconds"`
+	GroupSize      int       `db:"group_size" json:"-"`
 	Shadow         bool      `db:"shadow"`
 	CreatedAt      time.Time `db:"created_at"`
 }
@@ -112,7 +115,17 @@ func (s *Store) Dashboard(ctx context.Context, since time.Time, limit int) (Dash
 	}
 
 	summary := DashboardSummary{Since: since}
-	query := s.db.Adopt(`SELECT
+	groupExpr := logicalRuleEventGroup("e")
+	query := s.db.Adopt(`WITH ranked_events AS (
+		SELECT e.action, e.shadow,
+			ROW_NUMBER() OVER (
+				PARTITION BY ` + groupExpr + `
+				ORDER BY e.created_at ASC, e.message_id ASC
+			) AS group_rank
+		FROM community_rule_events e
+		WHERE e.tenant_id = ? AND e.created_at >= ?
+	)
+	SELECT
 		COUNT(*) AS total_events,
 		COALESCE(SUM(CASE WHEN action = 'allow' THEN 1 ELSE 0 END), 0) AS allowed,
 		COALESCE(SUM(CASE WHEN action <> 'allow' THEN 1 ELSE 0 END), 0) AS violations,
@@ -121,7 +134,7 @@ func (s *Store) Dashboard(ctx context.Context, since time.Time, limit int) (Dash
 		COALESCE(SUM(CASE WHEN action = 'warn' THEN 1 ELSE 0 END), 0) AS warnings,
 		COALESCE(SUM(CASE WHEN action = 'restrict' THEN 1 ELSE 0 END), 0) AS restrictions,
 		COALESCE(SUM(CASE WHEN action = 'ban' THEN 1 ELSE 0 END), 0) AS bans
-		FROM community_rule_events WHERE tenant_id = ? AND created_at >= ?`)
+		FROM ranked_events WHERE group_rank = 1`)
 	var totals struct {
 		TotalEvents      int `db:"total_events"`
 		Allowed          int `db:"allowed"`
@@ -132,7 +145,7 @@ func (s *Store) Dashboard(ctx context.Context, since time.Time, limit int) (Dash
 		Restrictions     int `db:"restrictions"`
 		Bans             int `db:"bans"`
 	}
-	if err = s.db.GetContext(ctx, &totals, query, true, false, s.db.TenantID(), since.UTC()); err != nil {
+	if err = s.db.GetContext(ctx, &totals, query, s.db.TenantID(), since.UTC(), true, false); err != nil {
 		return DashboardSnapshot{}, fmt.Errorf("load community dashboard totals: %w", err)
 	}
 	summary.TotalEvents = totals.TotalEvents
@@ -158,9 +171,18 @@ func (s *Store) Dashboard(ctx context.Context, since time.Time, limit int) (Dash
 	}
 
 	var daily []DailyRuleCount
-	dailyQuery := s.db.Adopt(`SELECT SUBSTR(CAST(created_at AS TEXT), 1, 10) AS day, shadow, COUNT(*) AS count
-		FROM community_rule_events
-		WHERE tenant_id = ? AND created_at >= ? AND action <> 'allow'
+	dailyQuery := s.db.Adopt(`WITH ranked_events AS (
+		SELECT e.action, e.shadow, e.created_at,
+			ROW_NUMBER() OVER (
+				PARTITION BY ` + groupExpr + `
+				ORDER BY e.created_at ASC, e.message_id ASC
+			) AS group_rank
+		FROM community_rule_events e
+		WHERE e.tenant_id = ? AND e.created_at >= ?
+	)
+	SELECT SUBSTR(CAST(created_at AS TEXT), 1, 10) AS day, shadow, COUNT(*) AS count
+		FROM ranked_events
+		WHERE group_rank = 1 AND action <> 'allow'
 		GROUP BY SUBSTR(CAST(created_at AS TEXT), 1, 10), shadow
 		ORDER BY SUBSTR(CAST(created_at AS TEXT), 1, 10) ASC, shadow DESC`)
 	if err = s.db.SelectContext(ctx, &daily, dailyQuery, s.db.TenantID(), since.UTC()); err != nil {
@@ -175,7 +197,7 @@ func (s *Store) ListRuleEvents(ctx context.Context, filter RuleEventFilter) ([]R
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	where := []string{"e.tenant_id = ?"}
+	where := []string{"e.tenant_id = ?", "e.group_rank = 1"}
 	args := []any{s.db.TenantID()}
 	if !filter.Since.IsZero() {
 		where = append(where, "e.created_at >= ?")
@@ -203,19 +225,42 @@ func (s *Store) ListRuleEvents(ctx context.Context, filter RuleEventFilter) ([]R
 	}
 	args = append(args, limit)
 
-	query := s.db.Adopt(`SELECT e.event_key, e.chat_id, e.thread_id, e.message_id, e.user_id,
-		COALESCE(m.username, '') AS username, COALESCE(m.display_name, '') AS display_name,
-		e.rule_code, e.action, e.reason, e.user_message, e.duration_seconds, e.shadow, e.created_at
-		FROM community_rule_events e
+	groupExpr := logicalRuleEventGroup("source")
+	query := s.db.Adopt(`WITH ranked_events AS (
+		SELECT source.tenant_id, source.event_key, source.chat_id, source.thread_id, source.message_id,
+			source.media_group_id, source.user_id,
+			COALESCE(m.username, '') AS username, COALESCE(m.display_name, '') AS display_name,
+			source.rule_code, source.action, source.reason, source.message_text, source.user_message,
+			source.duration_seconds, source.shadow, source.created_at,
+			ROW_NUMBER() OVER (
+				PARTITION BY ` + groupExpr + `
+				ORDER BY source.created_at ASC, source.message_id ASC
+			) AS group_rank,
+			COUNT(*) OVER (PARTITION BY ` + groupExpr + `) AS group_size
+		FROM community_rule_events source
 		LEFT JOIN community_members m
-		  ON m.tenant_id = e.tenant_id AND m.chat_id = e.chat_id AND m.user_id = e.user_id
+		  ON m.tenant_id = source.tenant_id AND m.chat_id = source.chat_id AND m.user_id = source.user_id
+	)
+	SELECT e.event_key, e.chat_id, e.thread_id, e.message_id, e.media_group_id, e.user_id,
+		e.username, e.display_name, e.rule_code, e.action, e.reason, e.message_text, e.user_message,
+		e.duration_seconds, e.group_size, e.shadow, e.created_at
+		FROM ranked_events e
 		WHERE ` + strings.Join(where, " AND ") + `
-		ORDER BY e.created_at DESC LIMIT ?`)
+		ORDER BY e.created_at DESC, e.message_id DESC LIMIT ?`)
 	var events []RuleEvent
 	if err := s.db.SelectContext(ctx, &events, query, args...); err != nil {
 		return nil, fmt.Errorf("list community rule events: %w", err)
 	}
 	return events, nil
+}
+
+func logicalRuleEventGroup(alias string) string {
+	return `CASE
+		WHEN ` + alias + `.media_group_id <> ''
+		THEN 'tenant:' || ` + alias + `.tenant_id || ':album:' ||
+			CAST(` + alias + `.chat_id AS TEXT) || ':' || ` + alias + `.media_group_id
+		ELSE 'tenant:' || ` + alias + `.tenant_id || ':event:' || ` + alias + `.event_key
+	END`
 }
 
 // ListPresentations returns persistent presentation claims newest first.

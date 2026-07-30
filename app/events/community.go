@@ -79,13 +79,14 @@ type CommunityAssistantStore interface {
 
 // CommunityDecision describes a deterministic topic-rule result.
 type CommunityDecision struct {
-	Handled     bool
-	Enforce     bool
-	Action      moderation.Action
-	Rule        string
-	Reason      string
-	UserMessage string
-	Duration    time.Duration
+	Handled             bool
+	Enforce             bool
+	GroupedContinuation bool
+	Action              moderation.Action
+	Rule                string
+	Reason              string
+	UserMessage         string
+	Duration            time.Duration
 }
 
 // CommunityModerator evaluates presentation and contest messages before any LLM.
@@ -130,7 +131,7 @@ func (l *TelegramListener) handleCommunityMessage(ctx context.Context, update tb
 		Text:            messageText(msg),
 		HasPhoto:        len(msg.Photo) > 0,
 		HasVideo:        msg.Video != nil || msg.VideoNote != nil || msg.Story != nil || msg.Animation != nil,
-		IsReply:         msg.ReplyToMessage != nil,
+		IsReply:         isCommunityConversationReply(msg),
 		IsBot:           isBot,
 		IsAdministrator: isAdministrator,
 		ReceivedAt:      msg.Time().UTC(),
@@ -166,6 +167,9 @@ func (l *TelegramListener) handleCommunityMessage(ctx context.Context, update tb
 	var result *multierror.Error
 	if err = actions.DeleteMessage(ctx, msg.Chat.ID, msg.MessageID); err != nil {
 		result = multierror.Append(result, fmt.Errorf("delete community-rule message: %w", err))
+	}
+	if decision.GroupedContinuation {
+		return true, result.ErrorOrNil()
 	}
 	if decision.UserMessage != "" {
 		err = actions.WarnUser(ctx, warnRequest{
@@ -213,4 +217,14 @@ func messageText(msg *tbapi.Message) string {
 		return msg.Text
 	}
 	return msg.Caption
+}
+
+func isCommunityConversationReply(msg *tbapi.Message) bool {
+	if msg == nil || msg.ReplyToMessage == nil {
+		return false
+	}
+	// Telegram represents a top-level forum post as a reply to the topic's
+	// service message. That structural reference is not user conversation.
+	return !msg.IsTopicMessage || msg.MessageThreadID <= 0 ||
+		msg.ReplyToMessage.MessageID != msg.MessageThreadID
 }

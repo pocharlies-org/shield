@@ -29,7 +29,9 @@ Presentaciones has three distinct violations: ordinary messages/replies
 (`presentation_message_not_allowed`), a photo without presentation text
 (`presentation_incomplete`), and a second otherwise valid presentation
 (`presentation_duplicate`). The presentation does not require a particular phrase about private
-messages.
+messages. Telegram's technical reply from a top-level forum message to the topic root is ignored;
+only a reply to another user message is conversation. A photo album is evaluated and counted once,
+and the dashboard shows its item count plus the exact caption/source text retained with that event.
 
 ## Actions and shadow rollout
 

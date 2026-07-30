@@ -480,6 +480,7 @@ textarea.input { resize: vertical; min-height: 70px; }
 .right-text { text-align: right; }
 .nowrap { white-space: nowrap; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+.exact-message { min-width: 260px; max-width: 520px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .w-full { width: 100%; }
 .hidden { display: none !important; }
 

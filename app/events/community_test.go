@@ -47,6 +47,44 @@ func TestTransformPreservesForumAndAlbumMetadata(t *testing.T) {
 	assert.Equal(t, "album-1", event.Content.Attributes["media_group_id"])
 }
 
+func TestCommunityTopicRootReferenceIsNotAConversationReply(t *testing.T) {
+	moderator := &communityModeratorStub{decision: CommunityDecision{
+		Handled: true, Action: moderation.ActionAllow,
+	}}
+	listener := TelegramListener{TenantID: "sauvage", CommunityModerator: moderator}
+	update := tbapi.Update{Message: &tbapi.Message{
+		MessageID: 52642, MessageThreadID: 3, IsTopicMessage: true,
+		MediaGroupID: "14283350186390044", Caption: "Somos una pareja joven.",
+		Chat: tbapi.Chat{ID: -1001}, From: &tbapi.User{ID: 42},
+		Photo:          []tbapi.PhotoSize{{FileID: "photo"}},
+		ReplyToMessage: &tbapi.Message{MessageID: 3},
+	}}
+
+	handled, err := listener.handleCommunityMessage(context.Background(), update)
+	require.NoError(t, err)
+	assert.False(t, handled)
+	assert.False(t, moderator.input.IsReply)
+	assert.True(t, moderator.input.HasPhoto)
+	assert.Equal(t, "Somos una pareja joven.", moderator.input.Text)
+}
+
+func TestCommunityRealTopicReplyRemainsConversation(t *testing.T) {
+	moderator := &communityModeratorStub{decision: CommunityDecision{
+		Handled: true, Action: moderation.ActionAllow,
+	}}
+	listener := TelegramListener{TenantID: "sauvage", CommunityModerator: moderator}
+	update := tbapi.Update{Message: &tbapi.Message{
+		MessageID: 52650, MessageThreadID: 3, IsTopicMessage: true,
+		Text: "Bienvenidos", Chat: tbapi.Chat{ID: -1001}, From: &tbapi.User{ID: 42},
+		ReplyToMessage: &tbapi.Message{MessageID: 52642},
+	}}
+
+	handled, err := listener.handleCommunityMessage(context.Background(), update)
+	require.NoError(t, err)
+	assert.False(t, handled)
+	assert.True(t, moderator.input.IsReply)
+}
+
 func TestCommunityWarningDeletesAndRepliesInSameTopic(t *testing.T) {
 	api := &mocks.TbAPIMock{
 		RequestFunc: func(tbapi.Chattable) (*tbapi.APIResponse, error) {
@@ -127,4 +165,28 @@ func TestCommunityUsesAuditedActionExecutor(t *testing.T) {
 	meta, ok := observability.MetadataFromContext(actions.warnCtxs[0])
 	require.True(t, ok)
 	assert.Equal(t, "community:sauvage:chat:-1001:message:22", meta.IdempotencyKey)
+}
+
+func TestCommunityGroupedContinuationOnlyDeletesTheRemainingAlbumItem(t *testing.T) {
+	actions := &actionExecutorSpy{}
+	moderator := &communityModeratorStub{decision: CommunityDecision{
+		Handled: true, Enforce: true, GroupedContinuation: true,
+		Action: moderation.ActionBan, Rule: "presentation_message_not_allowed",
+		UserMessage: "No debe repetirse.",
+	}}
+	listener := TelegramListener{
+		TenantID: "sauvage", CommunityModerator: moderator, ActionExecutor: actions,
+	}
+	update := tbapi.Update{Message: &tbapi.Message{
+		MessageID: 52643, MessageThreadID: 3, MediaGroupID: "album-a",
+		Chat: tbapi.Chat{ID: -1001}, From: &tbapi.User{ID: 42},
+		Photo: []tbapi.PhotoSize{{FileID: "photo"}},
+	}}
+
+	handled, err := listener.handleCommunityMessage(context.Background(), update)
+	require.NoError(t, err)
+	assert.True(t, handled)
+	require.Len(t, actions.deleteMessageCalls, 1)
+	assert.Empty(t, actions.warnCalls)
+	assert.Empty(t, actions.banCalls)
 }

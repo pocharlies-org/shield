@@ -138,12 +138,15 @@ When `COMMUNITY_ENABLED=true`, Shield applies SQL-backed rules before the LLM:
 - topic `3` (Presentaciones): one real photo-and-text presentation per Telegram user for the lifetime of the group;
 - topic `6` (Concurso): one photo entry or one photo album per user and `COMMUNITY_CONTEST_ID`;
 - every item with the same Telegram `media_group_id` belongs to the same allowed album;
+- Telegram's structural reply from a top-level forum post to its topic root is not treated as
+  conversation, and one album counts as one decision even when it contains several photos;
 - presentation replies/conversation are recorded as `presentation_message_not_allowed`, photos without
   presentation text as `presentation_incomplete`, and a second valid presentation as
   `presentation_duplicate`;
 - repeat violations escalate from warning to 1-hour restriction, 24-hour restriction, then ban;
 - administrators and channel announcements bypass these quotas;
-- managed-topic decisions store IDs, rule, action, reason, and timestamp, but not message text.
+- managed-topic decisions store the exact source text alongside IDs, album id, rule, action, reason,
+  and timestamp for the same bounded retention period as the audit event.
 
 `COMMUNITY_APPLY_ACTIONS=false` is topic-rule shadow mode: decisions are stored and logged without
 deleting, warning, restricting, or banning, and shadow observations do not preload live strikes.
