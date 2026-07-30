@@ -77,6 +77,28 @@ func TestOlderMemberObservationDoesNotRegressLastMessage(t *testing.T) {
 	assert.Equal(t, "Nombre", member.DisplayName)
 }
 
+func TestUpdateMemberIdentityDoesNotChangeLastMessageMetadata(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewStore(ctx, newTestDB(t))
+	require.NoError(t, err)
+	observedAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	require.NoError(t, store.ObserveMember(ctx, events.CommunityMember{
+		ChatID: -1001, UserID: 9, DisplayName: "Nombre antiguo",
+		LastMessageID: 50, LastThreadID: 3, LastMessageAt: observedAt,
+	}))
+
+	require.NoError(t, store.UpdateMemberIdentity(ctx, -1001, 9, "@usuario_actual", "Nombre Actual"))
+
+	member, found, err := store.GetCommunityMember(ctx, -1001, 9)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "usuario_actual", member.UserName)
+	assert.Equal(t, "Nombre Actual", member.DisplayName)
+	assert.Equal(t, 50, member.LastMessageID)
+	assert.Equal(t, 3, member.LastThreadID)
+	assert.True(t, observedAt.Equal(member.LastMessageAt))
+}
+
 func TestResetHistoricalTopicStateIsLimitedToShadowLookback(t *testing.T) {
 	ctx := context.Background()
 	store, err := NewStore(ctx, newTestDB(t))

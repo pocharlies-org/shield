@@ -75,6 +75,7 @@ func NewStore(ctx context.Context, db *engine.SQL) (*Store, error) {
 			chat_id BIGINT NOT NULL,
 			thread_id INTEGER NOT NULL,
 			message_id INTEGER NOT NULL,
+			related_message_id INTEGER NOT NULL DEFAULT 0,
 			media_group_id TEXT NOT NULL DEFAULT '',
 			user_id BIGINT NOT NULL,
 			rule_code TEXT NOT NULL,
@@ -132,6 +133,7 @@ func NewStore(ctx context.Context, db *engine.SQL) (*Store, error) {
 		}
 	}
 	migrations := []string{
+		"ALTER TABLE community_rule_events ADD COLUMN related_message_id INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE community_rule_events ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE community_rule_events ADD COLUMN message_text TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE community_rule_events ADD COLUMN user_message TEXT NOT NULL DEFAULT ''",
@@ -139,6 +141,7 @@ func NewStore(ctx context.Context, db *engine.SQL) (*Store, error) {
 	}
 	if db.Type() == engine.Postgres {
 		migrations = []string{
+			"ALTER TABLE community_rule_events ADD COLUMN IF NOT EXISTS related_message_id INTEGER NOT NULL DEFAULT 0",
 			"ALTER TABLE community_rule_events ADD COLUMN IF NOT EXISTS media_group_id TEXT NOT NULL DEFAULT ''",
 			"ALTER TABLE community_rule_events ADD COLUMN IF NOT EXISTS message_text TEXT NOT NULL DEFAULT ''",
 			"ALTER TABLE community_rule_events ADD COLUMN IF NOT EXISTS user_message TEXT NOT NULL DEFAULT ''",
@@ -245,7 +248,7 @@ func (e *Engine) evaluatePresentation(
 	}
 
 	entryKey := domainEntryKey(msg)
-	claimed, existingKey, err := e.store.claimPresentation(ctx, msg, entryKey)
+	claimed, existingKey, existingMessageID, err := e.store.claimPresentation(ctx, msg, entryKey)
 	if err != nil {
 		return events.CommunityDecision{}, err
 	}
@@ -262,8 +265,10 @@ func (e *Engine) evaluatePresentation(
 			Rule: "presentation_once", Reason: "Primera presentación válida o continuación del mismo álbum.",
 		})
 	}
-	return e.violation(ctx, msg, "presentation_duplicate", "La persona ya tiene una presentación registrada.",
-		"Solo se permite una presentación por persona. Esta publicación se ha retirado.")
+	return e.violationRelated(ctx, msg, "presentation_duplicate",
+		"La persona ya tiene una presentación registrada.",
+		"Solo se permite una presentación por persona. Esta publicación se ha retirado.",
+		existingMessageID)
 }
 
 func (e *Engine) evaluateContest(
@@ -276,7 +281,7 @@ func (e *Engine) evaluateContest(
 	}
 
 	entryKey := domainEntryKey(msg)
-	claimed, existingKey, err := e.store.claimContest(ctx, msg, e.config.ContestID, entryKey)
+	claimed, existingKey, existingMessageID, err := e.store.claimContest(ctx, msg, e.config.ContestID, entryKey)
 	if err != nil {
 		return events.CommunityDecision{}, err
 	}
@@ -293,14 +298,28 @@ func (e *Engine) evaluateContest(
 			Rule: "contest_entry_once", Reason: "first contest entry or continuation of the same album",
 		})
 	}
-	return e.violation(ctx, msg, "contest_duplicate", "user already entered the current contest",
-		"Solo se permite una entrada por persona en este concurso. Esta publicación se ha retirado.")
+	return e.violationRelated(ctx, msg, "contest_duplicate", "user already entered the current contest",
+		"Solo se permite una entrada por persona en este concurso. Esta publicación se ha retirado.",
+		existingMessageID)
 }
 
 func (e *Engine) violation(
 	ctx context.Context, msg events.CommunityMessage, rule, reason, userMessage string,
 ) (events.CommunityDecision, error) {
-	return e.store.recordViolationDecision(ctx, msg, rule, reason, userMessage, e.config.Shadow)
+	return e.violationRelated(ctx, msg, rule, reason, userMessage, 0)
+}
+
+func (e *Engine) violationRelated(
+	ctx context.Context,
+	msg events.CommunityMessage,
+	rule string,
+	reason string,
+	userMessage string,
+	relatedMessageID int,
+) (events.CommunityDecision, error) {
+	return e.store.recordViolationDecision(
+		ctx, msg, rule, reason, userMessage, relatedMessageID, e.config.Shadow,
+	)
 }
 
 func violationDecision(strikes int, rule, reason, userMessage string, shadow bool) events.CommunityDecision {
@@ -344,25 +363,25 @@ func domainEntryKey(msg events.CommunityMessage) string {
 
 func (s *Store) claimPresentation(
 	ctx context.Context, msg events.CommunityMessage, entryKey string,
-) (claimed bool, existingKey string, err error) {
+) (claimed bool, existingKey string, existingMessageID int, err error) {
 	return s.claim(ctx, "community_presentations", msg, "", entryKey)
 }
 
 func (s *Store) claimContest(
 	ctx context.Context, msg events.CommunityMessage, contestID, entryKey string,
-) (claimed bool, existingKey string, err error) {
+) (claimed bool, existingKey string, existingMessageID int, err error) {
 	return s.claim(ctx, "community_contest_entries", msg, contestID, entryKey)
 }
 
 func (s *Store) claim(
 	ctx context.Context, table string, msg events.CommunityMessage, contestID, entryKey string,
-) (claimed bool, existingKey string, err error) {
+) (claimed bool, existingKey string, existingMessageID int, err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	tx, err := s.db.BeginTxx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return false, "", fmt.Errorf("begin community claim: %w", err)
+		return false, "", 0, fmt.Errorf("begin community claim: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -381,36 +400,39 @@ func (s *Store) claim(
 			entryKey, msg.MessageID, timestamp(msg.ReceivedAt))
 	}
 	if err != nil {
-		return false, "", fmt.Errorf("claim community entry: %w", err)
+		return false, "", 0, fmt.Errorf("claim community entry: %w", err)
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return false, "", fmt.Errorf("inspect community claim: %w", err)
+		return false, "", 0, fmt.Errorf("inspect community claim: %w", err)
 	}
 	if rows > 0 {
 		if err = tx.Commit(); err != nil {
-			return false, "", fmt.Errorf("commit community claim: %w", err)
+			return false, "", 0, fmt.Errorf("commit community claim: %w", err)
 		}
-		return true, entryKey, nil
+		return true, entryKey, msg.MessageID, nil
 	}
 
-	var existing string
+	var existing struct {
+		EntryKey       string `db:"entry_key"`
+		FirstMessageID int    `db:"first_message_id"`
+	}
 	if table == "community_presentations" {
-		query := s.db.Adopt(`SELECT entry_key FROM community_presentations
+		query := s.db.Adopt(`SELECT entry_key, first_message_id FROM community_presentations
 			WHERE tenant_id = ? AND chat_id = ? AND user_id = ?`)
 		err = tx.GetContext(ctx, &existing, query, msg.TenantID, msg.ChatID, msg.UserID)
 	} else {
-		query := s.db.Adopt(`SELECT entry_key FROM community_contest_entries
+		query := s.db.Adopt(`SELECT entry_key, first_message_id FROM community_contest_entries
 			WHERE tenant_id = ? AND contest_id = ? AND user_id = ?`)
 		err = tx.GetContext(ctx, &existing, query, msg.TenantID, contestID, msg.UserID)
 	}
 	if err != nil {
-		return false, "", fmt.Errorf("load existing community entry: %w", err)
+		return false, "", 0, fmt.Errorf("load existing community entry: %w", err)
 	}
 	if err = tx.Commit(); err != nil {
-		return false, "", fmt.Errorf("commit community lookup: %w", err)
+		return false, "", 0, fmt.Errorf("commit community lookup: %w", err)
 	}
-	return false, existing, nil
+	return false, existing.EntryKey, existing.FirstMessageID, nil
 }
 
 func (s *Store) recordViolationDecision(
@@ -419,6 +441,7 @@ func (s *Store) recordViolationDecision(
 	rule string,
 	reason string,
 	userMessage string,
+	relatedMessageID int,
 	shadow bool,
 ) (events.CommunityDecision, error) {
 	s.lock.Lock()
@@ -432,22 +455,24 @@ func (s *Store) recordViolationDecision(
 
 	eventKey := communityEventKey(rule, msg)
 	var stored struct {
-		Rule            string `db:"rule_code"`
-		Action          string `db:"action"`
-		Reason          string `db:"reason"`
-		UserMessage     string `db:"user_message"`
-		DurationSeconds int64  `db:"duration_seconds"`
-		Shadow          bool   `db:"shadow"`
+		Rule             string `db:"rule_code"`
+		Action           string `db:"action"`
+		Reason           string `db:"reason"`
+		UserMessage      string `db:"user_message"`
+		RelatedMessageID int    `db:"related_message_id"`
+		DurationSeconds  int64  `db:"duration_seconds"`
+		Shadow           bool   `db:"shadow"`
 	}
-	existingQuery := s.db.Adopt(`SELECT rule_code, action, reason, user_message, duration_seconds, shadow
+	existingQuery := s.db.Adopt(`SELECT rule_code, action, reason, user_message, related_message_id,
+		duration_seconds, shadow
 		FROM community_rule_events WHERE tenant_id = ? AND event_key = ?`)
 	if existingErr := tx.GetContext(ctx, &stored, existingQuery, msg.TenantID, eventKey); existingErr == nil {
 		action := moderation.Action(stored.Action)
 		return events.CommunityDecision{
 			Handled: true, Enforce: !stored.Shadow && action != moderation.ActionAllow,
 			GroupedContinuation: true, Action: action, Rule: stored.Rule, Reason: stored.Reason,
-			UserMessage: stored.UserMessage,
-			Duration:    time.Duration(stored.DurationSeconds) * time.Second,
+			UserMessage: stored.UserMessage, RelatedMessageID: stored.RelatedMessageID,
+			Duration: time.Duration(stored.DurationSeconds) * time.Second,
 		}, nil
 	} else if !errors.Is(existingErr, sql.ErrNoRows) {
 		return events.CommunityDecision{}, fmt.Errorf("load grouped community violation: %w", existingErr)
@@ -479,13 +504,15 @@ func (s *Store) recordViolationDecision(
 	}
 
 	decision := violationDecision(strikes, rule, reason, userMessage, shadow)
+	decision.RelatedMessageID = relatedMessageID
 	query := s.db.Adopt(`INSERT INTO community_rule_events
-		(tenant_id, event_key, chat_id, thread_id, message_id, media_group_id, user_id, rule_code,
+		(tenant_id, event_key, chat_id, thread_id, message_id, related_message_id, media_group_id, user_id, rule_code,
 		 action, reason, message_text, user_message, duration_seconds, shadow, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (tenant_id, event_key) DO NOTHING`)
 	if _, err = tx.ExecContext(ctx, query, msg.TenantID, eventKey, msg.ChatID, msg.ThreadID, msg.MessageID,
-		msg.MediaGroupID, msg.UserID, decision.Rule, string(decision.Action), decision.Reason, msg.Text,
+		decision.RelatedMessageID, msg.MediaGroupID, msg.UserID, decision.Rule,
+		string(decision.Action), decision.Reason, msg.Text,
 		decision.UserMessage,
 		int64(decision.Duration/time.Second), shadow, timestamp(msg.ReceivedAt)); err != nil {
 		return events.CommunityDecision{}, fmt.Errorf("record community violation: %w", err)
@@ -505,12 +532,13 @@ func (s *Store) recordDecision(
 
 	eventKey := communityEventKey(decision.Rule, msg)
 	query := s.db.Adopt(`INSERT INTO community_rule_events
-		(tenant_id, event_key, chat_id, thread_id, message_id, media_group_id, user_id, rule_code,
+		(tenant_id, event_key, chat_id, thread_id, message_id, related_message_id, media_group_id, user_id, rule_code,
 		 action, reason, message_text, user_message, duration_seconds, shadow, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (tenant_id, event_key) DO NOTHING`)
 	if _, err := s.db.ExecContext(ctx, query, msg.TenantID, eventKey, msg.ChatID, msg.ThreadID, msg.MessageID,
-		msg.MediaGroupID, msg.UserID, decision.Rule, string(decision.Action), decision.Reason, msg.Text,
+		decision.RelatedMessageID, msg.MediaGroupID, msg.UserID, decision.Rule,
+		string(decision.Action), decision.Reason, msg.Text,
 		decision.UserMessage,
 		int64(decision.Duration/time.Second), shadow, timestamp(msg.ReceivedAt)); err != nil {
 		return fmt.Errorf("record community decision: %w", err)
@@ -525,14 +553,16 @@ func (s *Store) decisionForMessage(
 	defer s.lock.RUnlock()
 
 	var stored struct {
-		Rule            string `db:"rule_code"`
-		Action          string `db:"action"`
-		Reason          string `db:"reason"`
-		UserMessage     string `db:"user_message"`
-		DurationSeconds int64  `db:"duration_seconds"`
-		Shadow          bool   `db:"shadow"`
+		Rule             string `db:"rule_code"`
+		Action           string `db:"action"`
+		Reason           string `db:"reason"`
+		UserMessage      string `db:"user_message"`
+		RelatedMessageID int    `db:"related_message_id"`
+		DurationSeconds  int64  `db:"duration_seconds"`
+		Shadow           bool   `db:"shadow"`
 	}
-	query := s.db.Adopt(`SELECT rule_code, action, reason, user_message, duration_seconds, shadow
+	query := s.db.Adopt(`SELECT rule_code, action, reason, user_message, related_message_id,
+		duration_seconds, shadow
 		FROM community_rule_events
 		WHERE tenant_id = ? AND chat_id = ? AND message_id = ? AND user_id = ?
 		ORDER BY created_at ASC LIMIT 1`)
@@ -544,13 +574,14 @@ func (s *Store) decisionForMessage(
 	}
 	action := moderation.Action(stored.Action)
 	return events.CommunityDecision{
-		Handled:     true,
-		Enforce:     !stored.Shadow && action != moderation.ActionAllow,
-		Action:      action,
-		Rule:        stored.Rule,
-		Reason:      stored.Reason,
-		UserMessage: stored.UserMessage,
-		Duration:    time.Duration(stored.DurationSeconds) * time.Second,
+		Handled:          true,
+		Enforce:          !stored.Shadow && action != moderation.ActionAllow,
+		Action:           action,
+		Rule:             stored.Rule,
+		Reason:           stored.Reason,
+		UserMessage:      stored.UserMessage,
+		RelatedMessageID: stored.RelatedMessageID,
+		Duration:         time.Duration(stored.DurationSeconds) * time.Second,
 	}, true, nil
 }
 

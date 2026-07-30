@@ -32,6 +32,8 @@ Presentaciones has three distinct violations: ordinary messages/replies
 messages. Telegram's technical reply from a top-level forum message to the topic root is ignored;
 only a reply to another user message is conversation. A photo album is evaluated and counted once,
 and the dashboard shows its item count plus the exact caption/source text retained with that event.
+Duplicate decisions also retain the original accepted presentation message ID, so moderators can
+open both the duplicate and the presentation it duplicates.
 
 ## Actions and shadow rollout
 
@@ -80,6 +82,15 @@ The response parser requires exactly `spam`, `reason`, and `confidence`; rejects
 fields and wrappers; accepts confidence only from 1 to 100; and refuses a spam decision at 80 or
 below. Invalid output creates an error signal and never an automatic sanction.
 
+For live moderation, Ornith receives the current message plus at most
+`LLM_HISTORY_CONTEXT_SIZE` recent accepted chat messages (8 in the Sauvage deployment). It does not
+receive the complete chat history. Presentation duplicate detection does not ask Ornith to compare
+messages: the deterministic topic rule matches the persistent claim by numeric Telegram user ID.
+
+The archive does not reliably contain current Telegram usernames. On startup and every 24 hours,
+the live bot refreshes known community members with Telegram `getChatMember`; this updates display
+names and `@username` values without changing their last-message metadata.
+
 ## Telegram permissions
 
 Grant only:
@@ -93,14 +104,11 @@ messages. Keep the admin chat private and configure `SUPER_USER` with numeric Te
 
 ## Data and recovery
 
-The new SQL tables store no raw message body:
-
-- `community_presentations`;
-- `community_contest_entries`;
-- `community_violations`;
-- `community_rule_events`.
-- `community_members` (identity and last-message metadata, without message bodies);
-- `community_user_reports` (reporter, reported member, reason, status, and timestamps).
+`community_presentations`, `community_contest_entries`, `community_violations`, and
+`community_members` store claims, counters, identity, and message metadata without message bodies.
+`community_rule_events` retains the exact bounded event text needed by the authenticated moderation
+dashboard, including the source and related-original message IDs. `community_user_reports` stores
+the reporter, reported member, reason, status, and timestamps.
 
 Ingress records include topic and media-group identifiers for traceability. Retention now uses the
 real timestamp columns and propagates SQL errors instead of silently reporting success. Back up the

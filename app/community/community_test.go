@@ -39,12 +39,21 @@ func TestPresentationIsPersistentAndAlbumAware(t *testing.T) {
 
 	duplicate, err := eng.Evaluate(ctx, events.CommunityMessage{
 		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 12,
-		UserID: 42, HasPhoto: true, Text: "Hola, acepto privados",
+		MediaGroupID: "album-b", UserID: 42, HasPhoto: true, Text: "Hola, acepto privados",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, moderation.ActionWarn, duplicate.Action)
 	assert.True(t, duplicate.Enforce)
 	assert.Equal(t, "presentation_duplicate", duplicate.Rule)
+	assert.Equal(t, 10, duplicate.RelatedMessageID)
+
+	duplicatePart, err := eng.Evaluate(ctx, events.CommunityMessage{
+		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 13,
+		MediaGroupID: "album-b", UserID: 42, HasPhoto: true,
+	})
+	require.NoError(t, err)
+	assert.True(t, duplicatePart.GroupedContinuation)
+	assert.Equal(t, 10, duplicatePart.RelatedMessageID)
 }
 
 func TestPresentationSeparatesConversationIncompleteAndValidPosts(t *testing.T) {
@@ -103,6 +112,7 @@ func TestPresentationRegressionForRecentSauvageMessages(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "presentation_duplicate", duplicate.Rule)
+	assert.Equal(t, 52425, duplicate.RelatedMessageID)
 }
 
 func TestContestAllowsOneEntryAndRotatesByContestID(t *testing.T) {
@@ -131,6 +141,7 @@ func TestContestAllowsOneEntryAndRotatesByContestID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, moderation.ActionWarn, second.Action)
 	assert.Equal(t, "contest_duplicate", second.Rule)
+	assert.Equal(t, 20, second.RelatedMessageID)
 
 	config.ContestID = "contest-b"
 	nextContest, err := NewEngine(store, config)

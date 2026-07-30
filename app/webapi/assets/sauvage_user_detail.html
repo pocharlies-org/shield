@@ -38,7 +38,7 @@
         <thead><tr><th>Fecha</th><th>Topic</th><th>ID / enlace</th><th>Mensaje exacto</th><th>Regla</th><th>Acción</th><th>Motivo</th></tr></thead>
         <tbody>{{range .Events}}<tr>
             <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td><td>{{topicName .ThreadID}}</td>
-            <td><a href="{{telegramMessageURL .ChatID .ThreadID .MessageID}}" target="_blank" rel="noreferrer">{{.MessageID}}</a>{{if gt .GroupSize 1}}<div class="small muted">Álbum · {{.GroupSize}} mensajes</div>{{end}}</td>
+            <td><a href="{{telegramMessageURL .ChatID .ThreadID .MessageID}}" target="_blank" rel="noreferrer">{{.MessageID}}</a>{{if gt .GroupSize 1}}<div class="small muted">Álbum · {{.GroupSize}} mensajes</div>{{end}}{{if .RelatedMessageID}}<div class="small muted">Duplica la presentación <a href="{{telegramMessageURL .ChatID .ThreadID .RelatedMessageID}}" target="_blank" rel="noreferrer">{{.RelatedMessageID}}</a></div>{{end}}</td>
             <td>{{if .MessageText}}<div class="exact-message">{{.MessageText}}</div>{{else if .MediaGroupID}}<span class="muted">Foto del álbum sin texto</span>{{else}}<span class="muted">Sin texto</span>{{end}}</td>
             <td><code>{{.RuleCode}}</code></td><td>{{.Action}}</td><td>{{.Reason}}</td>
         </tr>{{else}}<tr><td colspan="7" class="center-text muted">No hay actividad de reglas para esta persona</td></tr>{{end}}</tbody>
