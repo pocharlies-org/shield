@@ -61,6 +61,7 @@ func TestDashboardSummarizesAndFiltersCommunityData(t *testing.T) {
 	require.Len(t, filtered, 1)
 	assert.Equal(t, "presentation_duplicate", filtered[0].RuleCode)
 	assert.Equal(t, "Presentación repetida literal", filtered[0].MessageText)
+	assert.Equal(t, 1, filtered[0].RelatedMessageID)
 }
 
 func TestDashboardCollapsesLegacyAlbumRowsIntoOneLogicalDecision(t *testing.T) {

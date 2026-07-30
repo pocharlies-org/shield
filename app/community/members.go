@@ -104,6 +104,33 @@ func (s *Store) ObserveMember(ctx context.Context, member events.CommunityMember
 	return nil
 }
 
+// UpdateMemberIdentity refreshes Telegram's current username and display name without
+// changing the last-message metadata collected by the moderation pipeline.
+func (s *Store) UpdateMemberIdentity(
+	ctx context.Context, chatID, userID int64, username, displayName string,
+) error {
+	if chatID == 0 || userID == 0 {
+		return fmt.Errorf("community member chat and user ids are required")
+	}
+	username = strings.TrimPrefix(strings.TrimSpace(username), "@")
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		displayName = username
+	}
+	query := s.db.Adopt(`UPDATE community_members
+		SET username = ?,
+			display_name = CASE WHEN ? <> '' THEN ? ELSE display_name END,
+			updated_at = ?
+		WHERE tenant_id = ? AND chat_id = ? AND user_id = ?`)
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if _, err := s.db.ExecContext(ctx, query, username, displayName, displayName, time.Now().UTC(),
+		s.db.TenantID(), chatID, userID); err != nil {
+		return fmt.Errorf("update community member identity: %w", err)
+	}
+	return nil
+}
+
 // GetCommunityMember returns one member by Telegram id.
 func (s *Store) GetCommunityMember(
 	ctx context.Context, chatID, userID int64,

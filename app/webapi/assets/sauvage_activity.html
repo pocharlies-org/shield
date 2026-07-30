@@ -26,7 +26,12 @@
             <tbody>{{range .Events}}<tr>
                 <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td><td>{{topicName .ThreadID}}</td>
                 <td><a href="/sauvage/users/{{.UserID}}">{{if .DisplayName}}{{.DisplayName}}{{else if .UserName}}@{{.UserName}}{{else}}{{.UserID}}{{end}}</a>{{if .UserName}}<div class="small muted">@{{.UserName}}</div>{{end}}<div class="small muted">ID {{.UserID}}</div></td>
-                <td><a href="{{telegramMessageURL .ChatID .ThreadID .MessageID}}" target="_blank" rel="noreferrer">{{.MessageID}} <i class="bi bi-box-arrow-up-right"></i></a>{{if gt .GroupSize 1}}<div class="small muted">Álbum · {{.GroupSize}} mensajes</div>{{end}}</td>
+                <td>
+                    <div class="small muted">{{if .RelatedMessageID}}Duplicado detectado{{else}}Mensaje{{end}}</div>
+                    <a href="{{telegramMessageURL .ChatID .ThreadID .MessageID}}" target="_blank" rel="noreferrer">{{.MessageID}} <i class="bi bi-box-arrow-up-right"></i></a>
+                    {{if gt .GroupSize 1}}<div class="small muted">Álbum · {{.GroupSize}} mensajes</div>{{end}}
+                    {{if .RelatedMessageID}}<div class="small muted">Presentación original</div><a href="{{telegramMessageURL .ChatID .ThreadID .RelatedMessageID}}" target="_blank" rel="noreferrer">{{.RelatedMessageID}} <i class="bi bi-box-arrow-up-right"></i></a>{{end}}
+                </td>
                 <td>{{if .MessageText}}<div class="exact-message">{{.MessageText}}</div>{{else if .MediaGroupID}}<span class="muted">Foto del álbum sin texto</span>{{else}}<span class="muted">Sin texto</span>{{end}}</td>
                 <td><code>{{.RuleCode}}</code></td><td>{{.Action}}</td>
                 <td>{{if .Shadow}}<span class="badge badge-info">shadow</span>{{else}}<span class="badge badge-spam">live</span>{{end}}</td>

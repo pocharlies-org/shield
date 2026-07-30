@@ -385,6 +385,12 @@ func execute(ctx context.Context, opts options) error {
 	}
 	tbAPI.Debug = opts.TGDbg
 
+	if opts.Community.Enabled && assembly.CommunityStore != nil {
+		go newCommunityIdentityRefresher(
+			assembly.CommunityStore, tbAPI, opts.Community.ChatID,
+		).Run(ctx)
+	}
+
 	tgListener := assembly.makeTelegramListener(opts, tbAPI)
 	if opts.Community.DailyDigestEnabled && assembly.CommunityStore != nil {
 		adminChatID, parseErr := strconv.ParseInt(strings.TrimSpace(opts.AdminGroup), 10, 64)

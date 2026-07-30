@@ -86,6 +86,7 @@ type CommunityDecision struct {
 	Rule                string
 	Reason              string
 	UserMessage         string
+	RelatedMessageID    int
 	Duration            time.Duration
 }
 

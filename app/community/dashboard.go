@@ -32,23 +32,24 @@ type DailyRuleCount struct {
 
 // RuleEvent is one deterministic topic decision.
 type RuleEvent struct {
-	EventKey       string    `db:"event_key"`
-	ChatID         int64     `db:"chat_id"`
-	ThreadID       int       `db:"thread_id"`
-	MessageID      int       `db:"message_id"`
-	MediaGroupID   string    `db:"media_group_id" json:"-"`
-	UserID         int64     `db:"user_id"`
-	UserName       string    `db:"username"`
-	DisplayName    string    `db:"display_name"`
-	RuleCode       string    `db:"rule_code"`
-	Action         string    `db:"action"`
-	Reason         string    `db:"reason"`
-	MessageText    string    `db:"message_text" json:"-"`
-	UserMessage    string    `db:"user_message"`
-	DurationSecond int64     `db:"duration_seconds"`
-	GroupSize      int       `db:"group_size" json:"-"`
-	Shadow         bool      `db:"shadow"`
-	CreatedAt      time.Time `db:"created_at"`
+	EventKey         string    `db:"event_key"`
+	ChatID           int64     `db:"chat_id"`
+	ThreadID         int       `db:"thread_id"`
+	MessageID        int       `db:"message_id"`
+	RelatedMessageID int       `db:"related_message_id"`
+	MediaGroupID     string    `db:"media_group_id" json:"-"`
+	UserID           int64     `db:"user_id"`
+	UserName         string    `db:"username"`
+	DisplayName      string    `db:"display_name"`
+	RuleCode         string    `db:"rule_code"`
+	Action           string    `db:"action"`
+	Reason           string    `db:"reason"`
+	MessageText      string    `db:"message_text" json:"-"`
+	UserMessage      string    `db:"user_message"`
+	DurationSecond   int64     `db:"duration_seconds"`
+	GroupSize        int       `db:"group_size" json:"-"`
+	Shadow           bool      `db:"shadow"`
+	CreatedAt        time.Time `db:"created_at"`
 }
 
 // PresentationRecord identifies a member's persistent presentation claim.
@@ -228,7 +229,7 @@ func (s *Store) ListRuleEvents(ctx context.Context, filter RuleEventFilter) ([]R
 	groupExpr := logicalRuleEventGroup("source")
 	query := s.db.Adopt(`WITH ranked_events AS (
 		SELECT source.tenant_id, source.event_key, source.chat_id, source.thread_id, source.message_id,
-			source.media_group_id, source.user_id,
+			source.related_message_id, source.media_group_id, source.user_id,
 			COALESCE(m.username, '') AS username, COALESCE(m.display_name, '') AS display_name,
 			source.rule_code, source.action, source.reason, source.message_text, source.user_message,
 			source.duration_seconds, source.shadow, source.created_at,
@@ -241,7 +242,8 @@ func (s *Store) ListRuleEvents(ctx context.Context, filter RuleEventFilter) ([]R
 		LEFT JOIN community_members m
 		  ON m.tenant_id = source.tenant_id AND m.chat_id = source.chat_id AND m.user_id = source.user_id
 	)
-	SELECT e.event_key, e.chat_id, e.thread_id, e.message_id, e.media_group_id, e.user_id,
+	SELECT e.event_key, e.chat_id, e.thread_id, e.message_id, e.related_message_id,
+		e.media_group_id, e.user_id,
 		e.username, e.display_name, e.rule_code, e.action, e.reason, e.message_text, e.user_message,
 		e.duration_seconds, e.group_size, e.shadow, e.created_at
 		FROM ranked_events e
