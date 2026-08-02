@@ -105,16 +105,13 @@ func checkVolumeMount(opts options) (ok bool) {
 func activateServer(
 	ctx context.Context, opts options, web webRuntimeAssembly, dmUsersProvider webapi.DMUsersProvider,
 ) (err error) {
-	authPassswd := opts.Server.AuthPasswd
-	if opts.Server.AuthPasswd == "auto" {
-		if len(opts.Server.ForwardAuthEmails) > 0 {
-			authPassswd = ""
-		} else {
-			return fmt.Errorf(
-				"SERVER_AUTH=auto is disabled because it exposes credentials in logs; " +
-					"configure SERVER_AUTH, SERVER_AUTH_HASH, or trusted forward auth",
-			)
-		}
+	authPasswd, err := resolveServerAuthPassword(
+		opts.Server.AuthPasswd,
+		opts.Server.AuthHash,
+		opts.Server.ForwardAuthEmails,
+	)
+	if err != nil {
+		return err
 	}
 
 	// make store and load approved users
@@ -226,7 +223,7 @@ func activateServer(
 		OnboardingProvider:    web.OnboardingProvider,
 		RestoreProvider:       web.RestoreProvider,
 		MetricsCollector:      web.Metrics,
-		AuthPasswd:            authPassswd,
+		AuthPasswd:            authPasswd,
 		AuthHash:              opts.Server.AuthHash,
 		ForwardAuthHeader:     opts.Server.ForwardAuthHeader,
 		ForwardAuthEmails:     opts.Server.ForwardAuthEmails,
@@ -247,6 +244,19 @@ func activateServer(
 		}
 	}()
 	return nil
+}
+
+func resolveServerAuthPassword(authPasswd, authHash string, forwardAuthEmails []string) (string, error) {
+	if authPasswd != "auto" {
+		return authPasswd, nil
+	}
+	if authHash != "" || len(forwardAuthEmails) > 0 {
+		return "", nil
+	}
+	return "", fmt.Errorf(
+		"SERVER_AUTH=auto is disabled because it exposes credentials in logs; " +
+			"configure SERVER_AUTH, SERVER_AUTH_HASH, or trusted forward auth",
+	)
 }
 
 // makeDetector creates spam detector with all checkers and updaters
