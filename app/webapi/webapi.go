@@ -170,6 +170,7 @@ type IncomingEventsProvider interface {
 // ModerationActionsProvider exposes the durable Telegram action journal.
 type ModerationActionsProvider interface {
 	Recent(ctx context.Context, since time.Time, limit int) ([]storage.ModerationActionEntry, error)
+	RecentDetailed(ctx context.Context, since time.Time, limit int) ([]storage.ModerationActionEntry, error)
 	Summary(ctx context.Context, since time.Time) (storage.ModerationActionSummary, error)
 }
 

@@ -42,11 +42,16 @@
     </section>
     <section x-show="tab === 'actions'" x-cloak>
         <div class="table-wrap"><table class="table">
-            <thead><tr><th>Fecha</th><th>Comando</th><th>Usuario</th><th>Mensaje</th><th>Intento</th><th>Estado</th><th>Error</th><th>Correlación</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Comando</th><th>Usuario</th><th>ID / enlace</th><th>Mensaje exacto</th><th>Descripción / motivo</th><th>Estado</th><th>Error</th></tr></thead>
             <tbody>{{range .Actions}}<tr>
-                <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td><td><code>{{.Command}}</code></td><td>{{.SubjectID}}</td><td>{{.MessageID}}</td>
-                <td>{{.Attempt}}</td><td>{{if eq .Status "completed"}}<span class="badge badge-ham">correcto</span>{{else if eq .Status "simulated"}}<span class="badge badge-info">simulado</span>{{else}}<span class="badge badge-spam">fallido</span>{{end}}</td>
-                <td class="truncate text-danger">{{.LastError}}</td><td class="small mono">{{.CorrelationID}}</td>
+                <td class="nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+                <td><code>{{.Command}}</code><div class="small muted">Intento {{.Attempt}}</div>{{if .CorrelationID}}<div class="small mono muted">{{.CorrelationID}}</div>{{end}}</td>
+                <td>{{if .TargetUserID}}<a href="/sauvage/users/{{.TargetUserID}}">{{if .DisplayName}}{{.DisplayName}}{{else if .UserName}}@{{.UserName}}{{else}}Usuario {{.TargetUserID}}{{end}}</a>{{if .UserName}}<div class="small muted">@{{.UserName}}</div>{{end}}<div class="small muted">ID {{.TargetUserID}}</div>{{else}}<span class="muted">Usuario no identificado</span>{{end}}</td>
+                <td>{{if .SourceMessageID}}<div class="small muted">{{if .ThreadID}}{{topicName .ThreadID}}{{else}}General{{end}}</div><a href="{{telegramMessageURL .ChatID .ThreadID .SourceMessageID}}" target="_blank" rel="noreferrer">Abrir mensaje {{.SourceMessageID}} <i class="bi bi-box-arrow-up-right"></i></a>{{else}}<span class="muted">Sin mensaje asociado</span>{{end}}</td>
+                <td>{{if .MessageText}}<div class="exact-message">{{.MessageText}}</div>{{else}}<span class="muted">Mensaje no guardado en el histórico</span>{{end}}</td>
+                <td>{{if .ReasonCode}}<code>{{.ReasonCode}}</code>{{end}}{{if .Description}}<div class="exact-message">{{.Description}}</div>{{else}}<span class="muted">Sin descripción registrada</span>{{end}}</td>
+                <td>{{if eq .Status "completed"}}<span class="badge badge-ham">correcto</span>{{else if eq .Status "simulated"}}<span class="badge badge-info">simulado</span>{{else}}<span class="badge badge-spam">fallido</span>{{end}}</td>
+                <td>{{if .LastError}}<div class="exact-message text-danger">{{.LastError}}</div>{{else}}<span class="muted">Sin error</span>{{end}}</td>
             </tr>{{else}}<tr><td colspan="8" class="center-text muted">No hay acciones registradas</td></tr>{{end}}</tbody>
         </table></div>
     </section>

@@ -86,20 +86,28 @@ var moderationActionsQueries = engine.NewQueryMap().
 
 // ModerationActionEntry stores one executor command attempt.
 type ModerationActionEntry struct {
-	ID             int64     `db:"id"`
-	GID            string    `db:"gid"`
-	TenantID       string    `db:"tenant_id"`
-	EventID        string    `db:"event_id"`
-	CorrelationID  string    `db:"correlation_id"`
-	IdempotencyKey string    `db:"idempotency_key"`
-	Command        string    `db:"command"`
-	Status         string    `db:"status"`
-	ChatID         int64     `db:"chat_id"`
-	SubjectID      int64     `db:"subject_id"`
-	MessageID      int       `db:"message_id"`
-	Attempt        int       `db:"attempt"`
-	LastError      string    `db:"last_error"`
-	CreatedAt      time.Time `db:"created_at"`
+	ID              int64     `db:"id"`
+	GID             string    `db:"gid"`
+	TenantID        string    `db:"tenant_id"`
+	EventID         string    `db:"event_id"`
+	CorrelationID   string    `db:"correlation_id"`
+	IdempotencyKey  string    `db:"idempotency_key"`
+	Command         string    `db:"command"`
+	Status          string    `db:"status"`
+	ChatID          int64     `db:"chat_id"`
+	SubjectID       int64     `db:"subject_id"`
+	MessageID       int       `db:"message_id"`
+	Attempt         int       `db:"attempt"`
+	LastError       string    `db:"last_error"`
+	CreatedAt       time.Time `db:"created_at"`
+	TargetUserID    int64     `db:"target_user_id"`
+	UserName        string    `db:"username"`
+	DisplayName     string    `db:"display_name"`
+	SourceMessageID int       `db:"source_message_id"`
+	ThreadID        int       `db:"thread_id"`
+	MessageText     string    `db:"message_text"`
+	Description     string    `db:"description"`
+	ReasonCode      string    `db:"reason_code"`
 }
 
 // ModerationActionLookup identifies one idempotent action command target.
@@ -235,6 +243,80 @@ func (m *ModerationActions) Recent(ctx context.Context, since time.Time, limit i
 	var entries []ModerationActionEntry
 	if err := m.SelectContext(ctx, &entries, m.Adopt(query), args...); err != nil {
 		return nil, fmt.Errorf("list recent moderation actions: %w", err)
+	}
+	return entries, nil
+}
+
+// RecentDetailed returns action attempts enriched with the member, source message,
+// moderation reason, and Telegram topic used by the operations dashboard.
+func (m *ModerationActions) RecentDetailed(ctx context.Context, since time.Time, limit int) ([]ModerationActionEntry, error) {
+	m.RLock()
+	defer m.RUnlock()
+
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	query := `WITH recent_actions AS (
+		SELECT id, gid, tenant_id, event_id, correlation_id, idempotency_key, command, status,
+			chat_id, subject_id, message_id, attempt, last_error, created_at
+		FROM moderation_actions WHERE tenant_id = ?`
+	args := []any{m.TenantID()}
+	if !since.IsZero() {
+		query += " AND created_at >= ?"
+		args = append(args, since.UTC())
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ?
+	), action_source AS (
+		SELECT a.*,
+			COALESCE(NULLIF(a.message_id, 0), NULLIF(ie.message_id, 0), 0) AS source_message_id,
+			COALESCE(i.spam_user_id, 0) AS incident_user_id,
+			COALESCE(i.spam_user_name, '') AS incident_user_name,
+			COALESCE(i.message_text, '') AS incident_message_text,
+			COALESCE(i.reason_text, '') AS incident_reason_text,
+			COALESCE(i.reason_code, '') AS incident_reason_code,
+			COALESCE(ie.message_thread_id, 0) AS incoming_thread_id,
+			COALESCE(ie.decision_reason, '') AS incoming_decision_reason
+		FROM recent_actions a
+		LEFT JOIN incidents i
+			ON i.tenant_id = a.tenant_id AND i.idempotency_key = a.idempotency_key
+			AND a.idempotency_key <> ''
+		LEFT JOIN incoming_events ie
+			ON ie.tenant_id = a.tenant_id AND ie.idempotency_key = a.idempotency_key
+			AND a.idempotency_key <> ''
+	), action_context AS (
+		SELECT s.*,
+			COALESCE(NULLIF(s.subject_id, 0), NULLIF(s.incident_user_id, 0),
+				NULLIF(cre.user_id, 0), NULLIF(um.user_id, 0), 0) AS target_user_id,
+			COALESCE(NULLIF(s.incoming_thread_id, 0), NULLIF(cre.thread_id, 0), 0) AS thread_id,
+			COALESCE(um.user_name, '') AS locator_user_name,
+			COALESCE(NULLIF(s.incident_message_text, ''), NULLIF(cre.message_text, ''), '') AS message_text,
+			COALESCE(NULLIF(s.incident_reason_text, ''), NULLIF(cre.reason, ''),
+				NULLIF(s.incoming_decision_reason, ''), '') AS description,
+			COALESCE(NULLIF(s.incident_reason_code, ''), NULLIF(cre.rule_code, ''), '') AS reason_code
+		FROM action_source s
+		LEFT JOIN community_rule_events cre
+			ON cre.tenant_id = s.tenant_id AND cre.chat_id = s.chat_id
+			AND cre.message_id = s.source_message_id AND s.source_message_id <> 0
+		LEFT JOIN user_messages um
+			ON um.tenant_id = s.tenant_id AND um.chat_id = s.chat_id
+			AND um.msg_id = s.source_message_id AND s.source_message_id <> 0
+	)
+	SELECT c.id, c.gid, c.tenant_id, c.event_id, c.correlation_id, c.idempotency_key,
+		c.command, c.status, c.chat_id, c.subject_id, c.message_id, c.attempt, c.last_error, c.created_at,
+		c.target_user_id,
+		COALESCE(NULLIF(m.username, ''), NULLIF(c.locator_user_name, ''), '') AS username,
+		COALESCE(NULLIF(m.display_name, ''), NULLIF(c.incident_user_name, ''),
+			NULLIF(c.locator_user_name, ''), '') AS display_name,
+		c.source_message_id, c.thread_id, c.message_text, c.description, c.reason_code
+	FROM action_context c
+	LEFT JOIN community_members m
+		ON m.tenant_id = c.tenant_id AND m.chat_id = c.chat_id AND m.user_id = c.target_user_id
+	ORDER BY c.created_at DESC, c.id DESC`
+	args = append(args, limit)
+
+	var entries []ModerationActionEntry
+	if err := m.SelectContext(ctx, &entries, m.Adopt(query), args...); err != nil {
+		return nil, fmt.Errorf("list detailed moderation actions: %w", err)
 	}
 	return entries, nil
 }

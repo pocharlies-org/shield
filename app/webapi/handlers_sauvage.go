@@ -115,7 +115,7 @@ func (s *Server) htmlSauvageActivityHandler(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "No se pudo cargar la actividad", http.StatusInternalServerError)
 		return
 	}
-	actions, err := s.ModerationActions.Recent(r.Context(), filter.Since, filter.Limit)
+	actions, err := s.ModerationActions.RecentDetailed(r.Context(), filter.Since, filter.Limit)
 	if err != nil {
 		http.Error(w, "No se pudo cargar el diario de acciones", http.StatusInternalServerError)
 		return
