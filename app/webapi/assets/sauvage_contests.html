@@ -6,7 +6,21 @@
 <form method="post" action="/sauvage/contests/draft">
 <div class="field"><label>Título</label><input class="input" name="title" maxlength="128" required placeholder="Concurso de fotografía de agosto"></div>
 <div class="field"><label>Bases</label><textarea class="input" name="bases" rows="6" maxlength="5000" required placeholder="Explica el tema, quién puede participar y cualquier condición especial."></textarea></div>
-<div class="field"><label>Fecha límite (opcional)</label><input class="input" type="datetime-local" name="deadline"></div>
+<div class="deadline-picker-row">
+<div class="field deadline-picker-row__date">
+<label for="contest-deadline-date">Fecha límite (opcional)</label>
+<div class="date-picker-control">
+<input class="input" id="contest-deadline-date" type="date" name="deadline" aria-describedby="contest-deadline-help">
+<button class="btn date-picker-button" type="button" data-date-picker-trigger="contest-deadline-date" aria-label="Abrir calendario para elegir la fecha límite"><i class="bi bi-calendar3"></i> Abrir calendario</button>
+</div>
+<div class="form-help" id="contest-deadline-help">Selecciona el día directamente en el calendario.</div>
+</div>
+<div class="field deadline-picker-row__time">
+<label for="contest-deadline-time">Hora</label>
+<input class="input" id="contest-deadline-time" type="time" name="deadline_time" value="23:59" step="60">
+<div class="form-help">Por defecto, el concurso termina a las 23:59 del día elegido.</div>
+</div>
+</div>
 <button class="btn btn-accent" type="submit">Preparar concurso</button>
 </form></div></section>
 

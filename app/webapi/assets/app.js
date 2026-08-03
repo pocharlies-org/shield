@@ -30,3 +30,26 @@ document.body.addEventListener('htmx:afterSettle', function (evt) {
         window.Alpine.initTree(evt.detail.target);
     }
 });
+
+// Open native date controls from a clear, full-size button. Some desktop
+// browsers render datetime-local as text segments, so the contests form uses a
+// dedicated date input and this explicit mouse-friendly calendar trigger.
+document.addEventListener('click', function (evt) {
+    var trigger = evt.target.closest('[data-date-picker-trigger]');
+    if (!trigger) return;
+
+    var input = document.getElementById(trigger.getAttribute('data-date-picker-trigger'));
+    if (!input) return;
+
+    input.focus();
+    if (typeof input.showPicker === 'function') {
+        try {
+            input.showPicker();
+        } catch (err) {
+            // focus() still exposes the native control on browsers that reject
+            // showPicker despite reporting it.
+        }
+    } else {
+        input.click();
+    }
+});
