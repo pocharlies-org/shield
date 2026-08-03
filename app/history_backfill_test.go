@@ -71,6 +71,23 @@ func TestHistoricalMessageFromLegacyArchiveRowTreatsRecoveredRootAsTopLevelPost(
 	assert.Equal(t, int64(6524317158), message.UserID)
 }
 
+func TestSortArchivedTelegramRowsUsesTelegramOrderForAlbumTimestampTies(t *testing.T) {
+	receivedAt := time.Date(2026, 4, 6, 9, 12, 11, 0, time.UTC)
+	rows := []archiveMessageRow{
+		{ArchiveID: "tg_-1003672565710_570", ReceivedAt: receivedAt, TelegramMessage: 570},
+		{ArchiveID: "tg_-1003672565710_572", ReceivedAt: receivedAt, TelegramMessage: 572},
+		{ArchiveID: "tg_-1003672565710_568", ReceivedAt: receivedAt, TelegramMessage: 568},
+		{ArchiveID: "tg_-1003672565710_569", ReceivedAt: receivedAt, TelegramMessage: 569},
+	}
+
+	sortArchivedTelegramRows(rows)
+
+	assert.Equal(t, []int{568, 569, 570, 572}, []int{
+		rows[0].TelegramMessage, rows[1].TelegramMessage,
+		rows[2].TelegramMessage, rows[3].TelegramMessage,
+	})
+}
+
 func TestAssignSyntheticMediaGroupsReconstructsAlbumsAndHonorsWindow(t *testing.T) {
 	base := time.Date(2026, 7, 22, 16, 24, 20, 0, time.UTC)
 	messages := []events.HistoricalMessage{

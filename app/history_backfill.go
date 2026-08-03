@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -154,6 +155,7 @@ func loadArchivedTelegramMessages(
 	); err != nil {
 		return nil, historyBackfillLoadSummary{}, fmt.Errorf("load archived Telegram messages: %w", err)
 	}
+	sortArchivedTelegramRows(rows)
 
 	topics := make(map[int]struct{})
 	for _, topicID := range historyBackfillTopics(opts) {
@@ -161,6 +163,7 @@ func loadArchivedTelegramMessages(
 	}
 	summary := historyBackfillLoadSummary{SourceRows: len(rows)}
 	messages := make([]events.HistoricalMessage, 0, len(rows))
+	memberIndexes := make(map[int64]int)
 	for _, row := range rows {
 		// Older telegram-sync rows did not persist metadata.topic_id. Telegram
 		// still recorded an ordinary forum post as a reply to the topic's root
@@ -176,11 +179,17 @@ func loadArchivedTelegramMessages(
 			log.Printf("[WARN] skip invalid archived Telegram message %q: %v", row.ArchiveID, err)
 			continue
 		}
-		summary.MemberObservations = append(summary.MemberObservations, events.CommunityMember{
+		member := events.CommunityMember{
 			ChatID: message.ChatID, UserID: message.UserID, UserName: message.UserName,
 			DisplayName: message.DisplayName, LastMessageID: message.MessageID,
 			LastThreadID: message.ThreadID, LastMessageAt: message.ReceivedAt,
-		})
+		}
+		if idx, found := memberIndexes[message.UserID]; !found {
+			memberIndexes[message.UserID] = len(summary.MemberObservations)
+			summary.MemberObservations = append(summary.MemberObservations, member)
+		} else if !member.LastMessageAt.Before(summary.MemberObservations[idx].LastMessageAt) {
+			summary.MemberObservations[idx] = member
+		}
 		if _, selected := topics[row.TopicID]; !selected {
 			continue
 		}
@@ -189,6 +198,34 @@ func loadArchivedTelegramMessages(
 	assignSyntheticMediaGroups(messages, opts.Backfill.AlbumWindow)
 	summary.SelectedRows = len(messages)
 	return messages, summary, nil
+}
+
+func sortArchivedTelegramRows(rows []archiveMessageRow) {
+	sort.SliceStable(rows, func(left, right int) bool {
+		if !rows[left].ReceivedAt.Equal(rows[right].ReceivedAt) {
+			return rows[left].ReceivedAt.Before(rows[right].ReceivedAt)
+		}
+		leftID := archivedTelegramMessageID(rows[left])
+		rightID := archivedTelegramMessageID(rows[right])
+		if leftID > 0 && rightID > 0 && leftID != rightID {
+			return leftID < rightID
+		}
+		if (leftID > 0) != (rightID > 0) {
+			return leftID > 0
+		}
+		return rows[left].ArchiveID < rows[right].ArchiveID
+	})
+}
+
+func archivedTelegramMessageID(row archiveMessageRow) int {
+	if row.TelegramMessage > 0 {
+		return row.TelegramMessage
+	}
+	messageID, err := parseTelegramMessageID(row.ArchiveID)
+	if err != nil {
+		return 0
+	}
+	return messageID
 }
 
 func archivedTopicFromReply(replyToMessage string, topics map[int]struct{}) int {
