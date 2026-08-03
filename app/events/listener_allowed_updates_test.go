@@ -30,5 +30,7 @@ func TestTelegramListenerExplicitlyRequestsConsumedUpdates(t *testing.T) {
 		tbapi.UpdateTypeMessage,
 		tbapi.UpdateTypeEditedMessage,
 		tbapi.UpdateTypeCallbackQuery,
+		tbapi.UpdateTypeMessageReaction,
+		tbapi.UpdateTypeMessageReactionCount,
 	}, received.AllowedUpdates)
 }

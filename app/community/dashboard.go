@@ -62,6 +62,14 @@ type PresentationRecord struct {
 	FirstMessageID int       `db:"first_message_id"`
 	EntryKey       string    `db:"entry_key"`
 	CreatedAt      time.Time `db:"created_at"`
+	MessageText    string    `db:"message_text"`
+}
+
+// PresentationFilter bounds and filters registered presentation claims.
+type PresentationFilter struct {
+	UserQuery    string
+	MessageQuery string
+	Limit        int
 }
 
 // ContestEntryRecord identifies one member entry in one contest.
@@ -96,13 +104,15 @@ type DashboardSnapshot struct {
 
 // RuleEventFilter bounds and filters a community event query.
 type RuleEventFilter struct {
-	Since    time.Time
-	ThreadID int
-	UserID   int64
-	RuleCode string
-	Action   string
-	Shadow   *bool
-	Limit    int
+	Since        time.Time
+	ThreadID     int
+	UserID       int64
+	UserQuery    string
+	MessageQuery string
+	RuleCode     string
+	Action       string
+	Shadow       *bool
+	Limit        int
 }
 
 // Dashboard returns summary totals, a daily trend, and recent decisions.
@@ -212,6 +222,14 @@ func (s *Store) ListRuleEvents(ctx context.Context, filter RuleEventFilter) ([]R
 		where = append(where, "e.user_id = ?")
 		args = append(args, filter.UserID)
 	}
+	if query := normalizedSearch(filter.UserQuery); query != "" {
+		where = append(where, `(LOWER(e.username) LIKE ? OR LOWER(e.display_name) LIKE ?)`)
+		args = append(args, query, query)
+	}
+	if query := normalizedSearch(filter.MessageQuery); query != "" {
+		where = append(where, `(LOWER(e.message_text) LIKE ? OR CAST(e.message_id AS TEXT) LIKE ? OR CAST(e.related_message_id AS TEXT) LIKE ?)`)
+		args = append(args, query, query, query)
+	}
 	if strings.TrimSpace(filter.RuleCode) != "" {
 		where = append(where, "e.rule_code = ?")
 		args = append(args, strings.TrimSpace(filter.RuleCode))
@@ -266,19 +284,41 @@ func logicalRuleEventGroup(alias string) string {
 }
 
 // ListPresentations returns persistent presentation claims newest first.
-func (s *Store) ListPresentations(ctx context.Context, limit int) ([]PresentationRecord, error) {
-	limit = boundedLimit(limit)
+func (s *Store) ListPresentations(ctx context.Context, filter PresentationFilter) ([]PresentationRecord, error) {
+	limit := boundedLimit(filter.Limit)
+	where := []string{"p.tenant_id = ?"}
+	args := []any{s.db.TenantID()}
+	if query := normalizedSearch(filter.UserQuery); query != "" {
+		where = append(where, `(LOWER(COALESCE(m.username, '')) LIKE ? OR LOWER(COALESCE(m.display_name, '')) LIKE ?)`)
+		args = append(args, query, query)
+	}
+	if query := normalizedSearch(filter.MessageQuery); query != "" {
+		where = append(where, `(LOWER(COALESCE(e.message_text, '')) LIKE ? OR CAST(p.first_message_id AS TEXT) LIKE ?)`)
+		args = append(args, query, query)
+	}
+	args = append(args, limit)
 	query := s.db.Adopt(`SELECT p.chat_id, p.user_id, COALESCE(m.username, '') AS username,
-		COALESCE(m.display_name, '') AS display_name, p.thread_id, p.first_message_id, p.entry_key, p.created_at
+		COALESCE(m.display_name, '') AS display_name, p.thread_id, p.first_message_id, p.entry_key, p.created_at,
+		COALESCE(e.message_text, '') AS message_text
 		FROM community_presentations p
 		LEFT JOIN community_members m
 		  ON m.tenant_id = p.tenant_id AND m.chat_id = p.chat_id AND m.user_id = p.user_id
-		WHERE p.tenant_id = ? ORDER BY p.created_at DESC LIMIT ?`)
+		LEFT JOIN community_rule_events e
+		  ON e.tenant_id = p.tenant_id AND e.chat_id = p.chat_id AND e.message_id = p.first_message_id
+		WHERE ` + strings.Join(where, " AND ") + ` ORDER BY p.created_at DESC LIMIT ?`)
 	var records []PresentationRecord
-	if err := s.db.SelectContext(ctx, &records, query, s.db.TenantID(), limit); err != nil {
+	if err := s.db.SelectContext(ctx, &records, query, args...); err != nil {
 		return nil, fmt.Errorf("list community presentations: %w", err)
 	}
 	return records, nil
+}
+
+func normalizedSearch(value string) string {
+	value = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(value, "@")))
+	if value == "" {
+		return ""
+	}
+	return "%" + value + "%"
 }
 
 // ListContestEntries returns contest claims newest first, optionally for one contest.

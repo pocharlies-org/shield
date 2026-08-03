@@ -121,7 +121,7 @@ func TestResetHistoricalTopicStateIsLimitedToShadowLookback(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, store.ResetHistoricalTopicState(ctx, -1001, []int{3}, now.Add(-7*24*time.Hour)))
-	presentations, err := store.ListPresentations(ctx, 10)
+	presentations, err := store.ListPresentations(ctx, PresentationFilter{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, presentations, 1)
 	assert.Equal(t, int64(1), presentations[0].UserID)

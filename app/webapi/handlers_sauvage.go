@@ -71,13 +71,20 @@ func (s *Server) htmlSauvageOverviewHandler(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) htmlSauvageActivityHandler(w http.ResponseWriter, r *http.Request) {
 	days := boundedQueryInt(r, "days", 7, 1, 90)
+	userQuery := strings.TrimSpace(r.URL.Query().Get("user"))
+	userID := queryInt64(r, "user")
+	if userID != 0 {
+		userQuery = ""
+	}
 	filter := community.RuleEventFilter{
-		Since:    time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour),
-		ThreadID: boundedQueryInt(r, "thread", 0, 0, 1_000_000),
-		UserID:   queryInt64(r, "user"),
-		RuleCode: strings.TrimSpace(r.URL.Query().Get("rule")),
-		Action:   strings.TrimSpace(r.URL.Query().Get("action")),
-		Limit:    boundedQueryInt(r, "limit", 200, 1, 1000),
+		Since:        time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour),
+		ThreadID:     boundedQueryInt(r, "thread", 0, 0, 1_000_000),
+		UserID:       userID,
+		UserQuery:    userQuery,
+		MessageQuery: strings.TrimSpace(r.URL.Query().Get("message")),
+		RuleCode:     strings.TrimSpace(r.URL.Query().Get("rule")),
+		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
+		Limit:        boundedQueryInt(r, "limit", 200, 1, 1000),
 	}
 	switch r.URL.Query().Get("mode") {
 	case "shadow":
@@ -105,7 +112,12 @@ func (s *Server) htmlSauvageActivityHandler(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) htmlSauvagePresentationsHandler(w http.ResponseWriter, r *http.Request) {
-	records, err := s.CommunityDashboard.ListPresentations(r.Context(), boundedQueryInt(r, "limit", 500, 1, 1000))
+	filter := community.PresentationFilter{
+		UserQuery:    strings.TrimSpace(r.URL.Query().Get("user")),
+		MessageQuery: strings.TrimSpace(r.URL.Query().Get("message")),
+		Limit:        boundedQueryInt(r, "limit", 500, 1, 1000),
+	}
+	records, err := s.CommunityDashboard.ListPresentations(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "No se pudieron cargar las presentaciones", http.StatusInternalServerError)
 		return
@@ -113,7 +125,8 @@ func (s *Server) htmlSauvagePresentationsHandler(w http.ResponseWriter, r *http.
 	data := struct {
 		Records  []community.PresentationRecord
 		Settings Settings
-	}{records, s.Settings}
+		Filter   community.PresentationFilter
+	}{records, s.Settings, filter}
 	if err = tmpl.ExecuteTemplate(w, "sauvage_presentations.html", data); err != nil {
 		http.Error(w, "No se pudo renderizar la página", http.StatusInternalServerError)
 	}
@@ -128,14 +141,117 @@ func (s *Server) htmlSauvageContestsHandler(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "No se pudieron cargar las participaciones", http.StatusInternalServerError)
 		return
 	}
+	var contests []community.Contest
+	var selected community.Contest
+	var leaderboard []community.ContestLeaderboardEntry
+	var appeals []community.ContestAppeal
+	if s.ContestManager != nil {
+		contests, err = s.ContestManager.List(r.Context(), 100)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar los concursos", http.StatusInternalServerError)
+			return
+		}
+		if contestID == "" && len(contests) > 0 {
+			contestID = contests[0].ContestID
+		}
+		if contestID != "" {
+			selected, err = s.ContestManager.Get(r.Context(), contestID)
+			if err != nil {
+				http.Error(w, "No se pudo cargar el concurso", http.StatusInternalServerError)
+				return
+			}
+			leaderboard, err = s.ContestManager.Leaderboard(r.Context(), contestID)
+			if err != nil {
+				http.Error(w, "No se pudo obtener la clasificación", http.StatusInternalServerError)
+				return
+			}
+			appeals, err = s.ContestManager.Appeals(r.Context(), contestID, 200)
+			if err != nil {
+				http.Error(w, "No se pudieron cargar las apelaciones", http.StatusInternalServerError)
+				return
+			}
+		}
+	}
 	data := struct {
-		Records   []community.ContestEntryRecord
-		Settings  Settings
-		ContestID string
-	}{records, s.Settings, contestID}
+		Records     []community.ContestEntryRecord
+		Settings    Settings
+		ContestID   string
+		Contests    []community.Contest
+		Selected    community.Contest
+		Leaderboard []community.ContestLeaderboardEntry
+		Appeals     []community.ContestAppeal
+	}{records, s.Settings, contestID, contests, selected, leaderboard, appeals}
 	if err = tmpl.ExecuteTemplate(w, "sauvage_contests.html", data); err != nil {
 		http.Error(w, "No se pudo renderizar la página", http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) sauvageContestDraftHandler(w http.ResponseWriter, r *http.Request) {
+	title, bases := strings.TrimSpace(r.FormValue("title")), strings.TrimSpace(r.FormValue("bases"))
+	var deadline *time.Time
+	if value := strings.TrimSpace(r.FormValue("deadline")); value != "" {
+		parsed, err := time.ParseInLocation("2006-01-02T15:04", value, time.Local)
+		if err != nil {
+			http.Error(w, "Fecha límite no válida", http.StatusBadRequest)
+			return
+		}
+		parsed = parsed.UTC()
+		deadline = &parsed
+	}
+	user, _, _ := r.BasicAuth()
+	contest, err := s.ContestManager.CreateDraft(r.Context(), community.ContestDraftInput{
+		Title: title, Bases: bases, DeadlineAt: deadline, CreatedBy: user,
+	})
+	if err != nil {
+		http.Error(w, "No se pudo crear el borrador: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/sauvage/contests?contest="+contest.ContestID, http.StatusSeeOther)
+}
+
+func (s *Server) sauvageContestPublishHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.ContestManager.UpdateDraft(r.Context(), id, r.FormValue("announcement")); err != nil {
+		http.Error(w, "No se pudo guardar la vista previa: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if _, err := s.ContestManager.Publish(r.Context(), id); err != nil {
+		http.Error(w, "No se pudo publicar el concurso: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	http.Redirect(w, r, "/sauvage/contests?contest="+id, http.StatusSeeOther)
+}
+
+func (s *Server) sauvageContestBeginFinalizeHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.ContestManager.BeginFinalize(r.Context(), id); err != nil {
+		http.Error(w, "No se pudo cerrar el concurso: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	http.Redirect(w, r, "/sauvage/contests?contest="+id, http.StatusSeeOther)
+}
+
+func (s *Server) sauvageContestConfirmFinalizeHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if strings.TrimSpace(r.FormValue("confirmation")) != "BORRAR" {
+		http.Error(w, "Escribe BORRAR para confirmar", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.ContestManager.ConfirmFinalize(r.Context(), id); err != nil {
+		http.Error(w, "No se pudo finalizar el concurso: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	http.Redirect(w, r, "/sauvage/contests?contest="+id, http.StatusSeeOther)
+}
+
+func (s *Server) sauvageContestAppealHandler(w http.ResponseWriter, r *http.Request) {
+	accepted := r.FormValue("decision") == "accept"
+	appeal, err := s.ContestManager.ResolveAppeal(r.Context(), r.PathValue("token"), accepted, r.FormValue("resolution"))
+	if err != nil {
+		http.Error(w, "No se pudo resolver la apelación: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/sauvage/contests?contest="+appeal.ContestID, http.StatusSeeOther)
 }
 
 func (s *Server) htmlSauvageUsersHandler(w http.ResponseWriter, r *http.Request) {

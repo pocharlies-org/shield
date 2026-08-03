@@ -1,8 +1,48 @@
 <!DOCTYPE html><html lang="es"><head><title>Concursos - Sauvage</title>{{template "heads.html"}}</head>
 <body x-data="{ navOpen:false }">{{template "sidebar.html"}}<main class="main">
-<header class="topbar"><button class="topbar__burger" @click="navOpen=!navOpen"><i class="bi bi-list"></i></button><h2 class="page-title">Participaciones en concursos</h2></header>
-<div class="content"><div class="alert alert-info">Concurso activo configurado: <code>{{.Settings.ContestID}}</code>. Un álbum completo cuenta como una participación.</div>
-<form class="filter-bar" method="get"><div class="field"><label>ID de concurso</label><input class="input" name="contest" value="{{.ContestID}}" placeholder="{{.Settings.ContestID}}"></div><button class="btn btn-accent">Filtrar</button></form>
-<div class="table-wrap"><table class="table"><thead><tr><th>Concurso</th><th>Usuario</th><th>Primer mensaje</th><th>Entrada</th><th>Fecha</th></tr></thead>
-<tbody>{{range .Records}}<tr><td><code>{{.ContestID}}</code></td><td><a href="/sauvage/users/{{.UserID}}">{{if .DisplayName}}{{.DisplayName}}{{else if .UserName}}@{{.UserName}}{{else}}{{.UserID}}{{end}}</a>{{if .UserName}}<div class="small muted">@{{.UserName}}</div>{{end}}<div class="small muted">ID {{.UserID}}</div></td><td><a href="{{telegramMessageURL .ChatID .ThreadID .FirstMessageID}}" target="_blank" rel="noreferrer">{{.FirstMessageID}}</a></td><td><code>{{.EntryKey}}</code></td><td>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td></tr>
-{{else}}<tr><td colspan="5" class="center-text muted">No hay participaciones</td></tr>{{end}}</tbody></table></div></div></main></body></html>
+<header class="topbar"><button class="topbar__burger" @click="navOpen=!navOpen"><i class="bi bi-list"></i></button><h2 class="page-title">Concursos</h2></header>
+<div class="content">
+<section class="card"><div class="card-header"><h3>Crear concurso</h3></div><div class="card-body">
+<form method="post" action="/sauvage/contests/draft">
+<div class="field"><label>Título</label><input class="input" name="title" maxlength="128" required placeholder="Concurso de fotografía de agosto"></div>
+<div class="field"><label>Bases</label><textarea class="input" name="bases" rows="6" maxlength="5000" required placeholder="Explica el tema, quién puede participar y cualquier condición especial."></textarea></div>
+<div class="field"><label>Fecha límite (opcional)</label><input class="input" type="datetime-local" name="deadline"></div>
+<button class="btn btn-accent" type="submit">Preparar concurso</button>
+</form></div></section>
+
+{{if .Contests}}<form class="filter-bar" method="get"><div class="field"><label>Concurso</label><select class="select" name="contest">{{range .Contests}}<option value="{{.ContestID}}" {{if eq $.ContestID .ContestID}}selected{{end}}>{{.Title}} · {{.Status}}</option>{{end}}</select></div><button class="btn btn-accent">Abrir</button></form>{{end}}
+
+{{if .Selected.ContestID}}
+<section class="card"><div class="card-header"><h3>{{.Selected.Title}}</h3><span class="badge badge-info">{{.Selected.Status}}</span></div><div class="card-body">
+<div class="small muted"><code>{{.Selected.ContestID}}</code>{{if .Selected.ThreadID}} · Topic {{.Selected.ThreadID}}{{end}}</div>
+{{if eq .Selected.Status "draft"}}
+<div class="alert alert-info">Revisa el texto generado. Al publicar se creará un topic nuevo, se enviará este mensaje y quedará fijado.</div>
+<form method="post" action="/sauvage/contests/{{.Selected.ContestID}}/publish" onsubmit="return confirm('¿Crear el topic y publicar este concurso?')">
+<div class="field"><label>Vista previa editable</label><textarea class="input" name="announcement" rows="14" required>{{.Selected.AnnouncementText}}</textarea></div>
+<button class="btn btn-accent" type="submit">Enviar al concurso</button></form>
+{{else}}<div class="exact-message">{{.Selected.AnnouncementText}}</div>{{end}}
+{{if eq .Selected.Status "active"}}
+<div class="alert alert-info">Cada usuario puede subir exactamente una foto. Los duplicados se eliminan, se avisa al usuario y puede apelar; esta regla no suma strikes ni banea.</div>
+<form method="post" action="/sauvage/contests/{{.Selected.ContestID}}/finalize" onsubmit="return confirm('¿Cerrar la participación y congelar el recuento? Aún no se borrará el topic.')"><button class="btn btn-danger" type="submit">Finalizar concurso</button></form>
+{{else if eq .Selected.Status "closing"}}
+<div class="alert alert-info">La participación está cerrada. Se consolidan reacciones retrasadas hasta {{.Selected.ConsolidateAfter.Format "15:04:05"}}. La confirmación siguiente borrará el topic y toda su conversación.</div>
+<form method="post" action="/sauvage/contests/{{.Selected.ContestID}}/confirm-finalize"><div class="field"><label>Escribe BORRAR para confirmar</label><input class="input" name="confirmation" required autocomplete="off"></div><button class="btn btn-danger" type="submit">Confirmar ganador y borrar conversación</button></form>
+{{else if eq .Selected.Status "finalized"}}
+<div class="alert alert-info">Concurso finalizado. El topic y su conversación se borraron. Ganador: usuario {{.Selected.WinnerUserID}}, mensaje {{.Selected.WinnerMessageID}}, {{.Selected.WinnerReactions}} reacciones.</div>
+{{end}}
+</div></section>
+
+<h3>Clasificación por reacciones</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>Puesto</th><th>Usuario</th><th>Foto</th><th>Total</th><th>Detalle</th></tr></thead><tbody>
+{{range .Leaderboard}}<tr><td>{{.Position}}</td><td>{{if .DisplayName}}{{.DisplayName}}{{else if .UserName}}@{{.UserName}}{{else}}{{.UserID}}{{end}}</td><td><a href="{{telegramMessageURL $.Selected.ChatID $.Selected.ThreadID .MessageID}}" target="_blank" rel="noreferrer">{{.MessageID}}</a></td><td><strong>{{.ReactionTotal}}</strong></td><td>{{range $reaction, $count := .Breakdown}}{{$reaction}} {{$count}} &nbsp;{{else}}<span class="muted">Sin reacciones</span>{{end}}</td></tr>
+{{else}}<tr><td colspan="5" class="center-text muted">Todavía no hay participaciones</td></tr>{{end}}</tbody></table></div>
+
+<h3>Apelaciones</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>Usuario</th><th>Mensajes</th><th>Motivo</th><th>Estado</th><th>Decisión</th></tr></thead><tbody>
+{{range .Appeals}}<tr><td>{{if .DisplayName}}{{.DisplayName}}{{else if .UserName}}@{{.UserName}}{{else}}{{.UserID}}{{end}}</td><td>Original {{.OriginalMessageID}} · retirado {{.DuplicateMessageID}}</td><td>{{.AppealText}}{{if .Caption}}<div class="small muted">Texto: {{.Caption}}</div>{{end}}</td><td>{{.Status}}</td><td>{{if eq .Status "open"}}<form method="post" action="/sauvage/contest-appeals/{{.AppealToken}}"><input class="input" name="resolution" placeholder="Respuesta al usuario"><button class="btn btn-accent" name="decision" value="accept">Aceptar y permitir otra foto</button><button class="btn" name="decision" value="reject">Rechazar</button></form>{{else}}{{.ResolutionText}}{{end}}</td></tr>
+{{else}}<tr><td colspan="5" class="center-text muted">No hay apelaciones</td></tr>{{end}}</tbody></table></div>
+
+<h3>Participaciones registradas</h3>
+<div class="table-wrap"><table class="table"><thead><tr><th>Usuario</th><th>Foto</th><th>Fecha</th></tr></thead><tbody>{{range .Records}}<tr><td><a href="/sauvage/users/{{.UserID}}">{{if .DisplayName}}{{.DisplayName}}{{else if .UserName}}@{{.UserName}}{{else}}{{.UserID}}{{end}}</a></td><td><a href="{{telegramMessageURL .ChatID .ThreadID .FirstMessageID}}" target="_blank" rel="noreferrer">{{.FirstMessageID}}</a></td><td>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td></tr>{{else}}<tr><td colspan="3" class="center-text muted">No hay participaciones</td></tr>{{end}}</tbody></table></div>
+{{end}}
+</div></main></body></html>

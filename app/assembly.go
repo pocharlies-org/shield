@@ -229,6 +229,7 @@ func activateServer(
 		ForwardAuthEmails:     opts.Server.ForwardAuthEmails,
 		ForwardAuthProxyCIDRs: opts.Server.ForwardAuthProxyCIDRs,
 		CommunityDashboard:    web.CommunityStore,
+		ContestManager:        web.ContestManager,
 		IncomingEvents:        web.IncomingEvents,
 		ModerationActions:     web.ModerationActions,
 		IncidentDashboard:     web.IncidentDashboard,
@@ -236,6 +237,7 @@ func activateServer(
 		Dbg:                   opts.Dbg,
 		Settings:              settings,
 		EnvPinnedKeys:         envPinnedKeys(),
+		SauvageInternalToken:  opts.Server.SauvageInternalToken,
 	}}
 
 	go func() {

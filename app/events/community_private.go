@@ -28,7 +28,8 @@ const sauvageRulesText = "Normas básicas de Sauvage:\n\n" +
 const sauvageMenuText = "Puedo ayudarte con tres cosas:\n\n" +
 	"/normas — ver las normas\n" +
 	"/mipresentacion — comprobar tu presentación\n" +
-	"/reportar — reportar a una persona"
+	"/reportar — reportar a una persona\n" +
+	"También puedes abrir aquí una apelación desde el botón de un aviso de concurso."
 
 type privateReportStage int
 
@@ -87,6 +88,9 @@ func (a *communityPrivateAssistant) Handle(ctx context.Context, msg *tbapi.Messa
 	switch command {
 	case "start":
 		a.clearState(msg.From.ID)
+		if token, ok := strings.CutPrefix(argument, "contest_"); ok {
+			return a.submitContestAppeal(ctx, msg, token)
+		}
 		return a.reply(msg.Chat.ID, sauvageMenuText)
 	case "normas":
 		a.clearState(msg.From.ID)
@@ -124,6 +128,20 @@ func (a *communityPrivateAssistant) Handle(ctx context.Context, msg *tbapi.Messa
 		a.clearState(msg.From.ID)
 		return a.reply(msg.Chat.ID, "Usa /reportar para empezar de nuevo.")
 	}
+}
+
+func (a *communityPrivateAssistant) submitContestAppeal(ctx context.Context, msg *tbapi.Message, token string) error {
+	store, ok := a.store.(interface {
+		OpenContestAppeal(context.Context, string, int64, string) error
+	})
+	if !ok {
+		return a.reply(msg.Chat.ID, "Las apelaciones de concursos no están disponibles ahora mismo.")
+	}
+	if err := store.OpenContestAppeal(ctx, token, msg.From.ID,
+		"El usuario solicita revisar la retirada de su foto duplicada."); err != nil {
+		return a.reply(msg.Chat.ID, "No he podido abrir esa apelación: "+err.Error())
+	}
+	return a.reply(msg.Chat.ID, "Apelación registrada. El equipo revisará el caso y te responderá por aquí.")
 }
 
 func (a *communityPrivateAssistant) sendPresentation(ctx context.Context, msg *tbapi.Message) error {

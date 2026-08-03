@@ -25,6 +25,7 @@ type CommunityMessage struct {
 	UserName        string
 	DisplayName     string
 	Text            string
+	PhotoFileID     string
 	HasPhoto        bool
 	HasVideo        bool
 	IsReply         bool
@@ -88,11 +89,18 @@ type CommunityDecision struct {
 	UserMessage         string
 	RelatedMessageID    int
 	Duration            time.Duration
+	ContestAction       bool
+	AppealToken         string
 }
 
 // CommunityModerator evaluates presentation and contest messages before any LLM.
 type CommunityModerator interface {
 	Evaluate(ctx context.Context, msg CommunityMessage) (CommunityDecision, error)
+}
+
+type CommunityContestStore interface {
+	RecordReactionCounts(ctx context.Context, chatID int64, messageID int, at time.Time, counts map[string]int) error
+	RecordActorReactions(ctx context.Context, chatID int64, messageID int, actorKey string, at time.Time, reactions []string) error
 }
 
 func (l *TelegramListener) handleCommunityMessage(ctx context.Context, update tbapi.Update) (bool, error) {
@@ -130,6 +138,7 @@ func (l *TelegramListener) handleCommunityMessage(ctx context.Context, update tb
 		UserName:        userName,
 		DisplayName:     displayName,
 		Text:            messageText(msg),
+		PhotoFileID:     largestPhotoFileID(msg),
 		HasPhoto:        len(msg.Photo) > 0,
 		HasVideo:        msg.Video != nil || msg.VideoNote != nil || msg.Story != nil || msg.Animation != nil,
 		IsReply:         isCommunityConversationReply(msg),
@@ -153,6 +162,9 @@ func (l *TelegramListener) handleCommunityMessage(ctx context.Context, update tb
 	observability.Logf(ctx, "[INFO] community rule=%s action=%s enforce=%t chat=%d thread=%d message=%d user=%d reason=%s",
 		decision.Rule, decision.Action, decision.Enforce, msg.Chat.ID, msg.MessageThreadID, msg.MessageID, userID,
 		decision.Reason)
+	if decision.ContestAction && decision.Enforce {
+		return true, l.applyContestAction(ctx, msg, userID, decision)
+	}
 	if !decision.Enforce || l.Dry || l.TrainingMode || decision.Action == moderation.ActionAllow {
 		// Topic rules and conduct moderation are complementary. An allowed or
 		// shadow-mode topic decision must continue through the normal detector.
@@ -211,6 +223,84 @@ func (l *TelegramListener) handleCommunityMessage(ctx context.Context, update tb
 		result = multierror.Append(result, fmt.Errorf("apply community-rule action: %w", err))
 	}
 	return true, result.ErrorOrNil()
+}
+
+func (l *TelegramListener) applyContestAction(
+	_ context.Context, msg *tbapi.Message, userID int64, decision CommunityDecision,
+) error {
+	var result *multierror.Error
+	_, err := l.TbAPI.Request(tbapi.DeleteMessageConfig{BaseChatMessage: tbapi.BaseChatMessage{
+		ChatConfig: tbapi.ChatConfig{ChatID: msg.Chat.ID}, MessageID: msg.MessageID,
+	}})
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("delete contest message: %w", err))
+	}
+	warning := tbapi.NewMessage(msg.Chat.ID, decision.UserMessage)
+	warning.MessageThreadID = msg.MessageThreadID
+	if decision.AppealToken != "" && strings.TrimSpace(l.BotUsername) != "" {
+		url := fmt.Sprintf("https://t.me/%s?start=contest_%s", strings.TrimPrefix(l.BotUsername, "@"), decision.AppealToken)
+		warning.ReplyMarkup = tbapi.NewInlineKeyboardMarkup(tbapi.NewInlineKeyboardRow(
+			tbapi.NewInlineKeyboardButtonURL("Apelar", url),
+		))
+	}
+	if _, err = l.TbAPI.Send(warning); err != nil {
+		result = multierror.Append(result, fmt.Errorf("send contest warning for user %d: %w", userID, err))
+	}
+	return result.ErrorOrNil()
+}
+
+func (l *TelegramListener) handleContestReaction(ctx context.Context, update tbapi.Update) (bool, error) {
+	if l.CommunityContestStore == nil {
+		return false, nil
+	}
+	if reaction := update.MessageReactionCount; reaction != nil {
+		counts := make(map[string]int, len(reaction.Reactions))
+		for _, item := range reaction.Reactions {
+			counts[contestReactionKey(item.Type)] = item.TotalCount
+		}
+		return true, l.CommunityContestStore.RecordReactionCounts(
+			ctx, reaction.Chat.ID, reaction.MessageID, time.Unix(reaction.Date, 0).UTC(), counts,
+		)
+	}
+	if reaction := update.MessageReaction; reaction != nil {
+		actorKey := ""
+		if reaction.User != nil {
+			actorKey = fmt.Sprintf("user:%d", reaction.User.ID)
+		} else if reaction.ActorChat != nil {
+			actorKey = fmt.Sprintf("chat:%d", reaction.ActorChat.ID)
+		}
+		if actorKey == "" {
+			return true, nil
+		}
+		keys := make([]string, 0, len(reaction.NewReaction))
+		for _, item := range reaction.NewReaction {
+			keys = append(keys, contestReactionKey(item))
+		}
+		return true, l.CommunityContestStore.RecordActorReactions(
+			ctx, reaction.Chat.ID, reaction.MessageID, actorKey, time.Unix(reaction.Date, 0).UTC(), keys,
+		)
+	}
+	return false, nil
+}
+
+func contestReactionKey(reaction tbapi.ReactionType) string {
+	switch reaction.Type {
+	case tbapi.ReactionTypeEmoji:
+		return reaction.Emoji
+	case tbapi.ReactionTypeCustomEmoji:
+		return "custom:" + reaction.CustomEmoji
+	case tbapi.ReactionTypePaid:
+		return "paid"
+	default:
+		return reaction.Type
+	}
+}
+
+func largestPhotoFileID(msg *tbapi.Message) string {
+	if msg == nil || len(msg.Photo) == 0 {
+		return ""
+	}
+	return msg.Photo[len(msg.Photo)-1].FileID
 }
 
 func messageText(msg *tbapi.Message) string {

@@ -10,7 +10,8 @@
     <form class="filter-bar" method="get">
         <div class="field"><label>Días</label><input class="input" type="number" name="days" min="1" max="90" value="{{.Days}}"></div>
         <div class="field"><label>Topic</label><select class="select" name="thread"><option value="0">Todos</option><option value="1">General</option><option value="2">Preguntas</option><option value="3">Presentaciones</option><option value="5">Calendario</option><option value="6">Concurso</option></select></div>
-        <div class="field"><label>Usuario</label><input class="input" name="user" inputmode="numeric" placeholder="ID Telegram"></div>
+        <div class="field"><label>Usuario</label><input class="input" name="user" value="{{if .Filter.UserQuery}}{{.Filter.UserQuery}}{{else if .Filter.UserID}}{{.Filter.UserID}}{{end}}" placeholder="Nombre o @usuario"></div>
+        <div class="field"><label>Mensaje</label><input class="input" name="message" value="{{.Filter.MessageQuery}}" placeholder="Texto o ID de mensaje"></div>
         <div class="field"><label>Regla</label><input class="input" name="rule" placeholder="presentation_duplicate"></div>
         <div class="field"><label>Acción</label><select class="select" name="action"><option value="">Todas</option><option value="allow">allow</option><option value="warn">warn</option><option value="restrict">restrict</option><option value="ban">ban</option></select></div>
         <div class="field"><label>Modo</label><select class="select" name="mode"><option value="">Todos</option><option value="shadow">Shadow</option><option value="live">Live</option></select></div>

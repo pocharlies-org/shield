@@ -87,6 +87,7 @@ type webRuntimeAssembly struct {
 	IncomingEvents       *storage.IncomingEvents
 	ModerationActions    *storage.ModerationActions
 	IncidentDashboard    *storage.IncidentStorage
+	ContestManager       *community.ContestManager
 }
 
 func assembleRuntime(ctx context.Context, opts options) (*runtimeAssembly, error) {
@@ -514,6 +515,7 @@ func (a *runtimeAssembly) makeTelegramListener(opts options, tbAPI *tbapi.BotAPI
 		DetectedSpamCounter:     a.DetectedSpamStore,
 		CommunityModerator:      a.CommunityModerator,
 		CommunityAssistantStore: a.CommunityStore,
+		CommunityContestStore:   a.CommunityStore,
 		CommunityChatID:         opts.Community.ChatID,
 		PresentationThreadID:    opts.Community.PresentationThreadID,
 		RuleSetVersion:          a.ActiveRuleSet.Version,

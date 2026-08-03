@@ -15,6 +15,18 @@ func (s *Server) routes(router *routegroup.Bundle) *routegroup.Bundle {
 }
 
 func (s *Server) setupAPIRoutes(router *routegroup.Bundle) {
+	if s.ContestManager != nil && s.SauvageInternalToken != "" {
+		router.Mount("/internal/sauvage/contests").Route(func(r *routegroup.Bundle) {
+			r.Use(s.sauvageInternalAuthMiddleware)
+			r.HandleFunc("GET /", s.internalSauvageContestListHandler)
+			r.HandleFunc("POST /", s.internalSauvageContestCreateHandler)
+			r.HandleFunc("GET /{id}", s.internalSauvageContestGetHandler)
+			r.HandleFunc("GET /{id}/leaderboard", s.internalSauvageContestLeaderboardHandler)
+			r.HandleFunc("POST /{id}/publish", s.internalSauvageContestPublishHandler)
+			r.HandleFunc("POST /{id}/begin-finalize", s.internalSauvageContestBeginFinalizeHandler)
+			r.HandleFunc("POST /{id}/confirm-finalize", s.internalSauvageContestConfirmFinalizeHandler)
+		})
+	}
 	router.Group().Route(func(authApi *routegroup.Bundle) {
 		authApi.Use(s.authMiddleware(rest.BasicAuthWithUserPasswd("tg-spam", s.AuthPasswd)))
 		authApi.HandleFunc("POST /check", s.checkMsgHandler)
@@ -152,6 +164,13 @@ func (s *Server) setupWebUIRoutes(router *routegroup.Bundle) {
 			webUI.HandleFunc("GET /sauvage/activity", s.htmlSauvageActivityHandler)
 			webUI.HandleFunc("GET /sauvage/presentations", s.htmlSauvagePresentationsHandler)
 			webUI.HandleFunc("GET /sauvage/contests", s.htmlSauvageContestsHandler)
+			if s.ContestManager != nil {
+				webUI.HandleFunc("POST /sauvage/contests/draft", s.sauvageContestDraftHandler)
+				webUI.HandleFunc("POST /sauvage/contests/{id}/publish", s.sauvageContestPublishHandler)
+				webUI.HandleFunc("POST /sauvage/contests/{id}/finalize", s.sauvageContestBeginFinalizeHandler)
+				webUI.HandleFunc("POST /sauvage/contests/{id}/confirm-finalize", s.sauvageContestConfirmFinalizeHandler)
+				webUI.HandleFunc("POST /sauvage/contest-appeals/{token}", s.sauvageContestAppealHandler)
+			}
 			webUI.HandleFunc("GET /sauvage/users", s.htmlSauvageUsersHandler)
 			webUI.HandleFunc("GET /sauvage/users/{id}", s.htmlSauvageUserDetailHandler)
 			webUI.HandleFunc("GET /sauvage/system", s.htmlSauvageSystemHandler)

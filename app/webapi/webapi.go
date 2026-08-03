@@ -110,11 +110,13 @@ type Config struct {
 	RestoreProvider       RestoreService             // tenant restore from backup
 	MetricsCollector      MetricsProvider            // SLO/SLA metrics
 	CommunityDashboard    CommunityDashboardProvider // Sauvage topic-rule dashboard
-	IncomingEvents        IncomingEventsProvider     // normalized Telegram ingress dashboard
-	ModerationActions     ModerationActionsProvider  // executor action journal
-	IncidentDashboard     IncidentDashboardProvider  // aggregate incident counts without message contents
-	Dbg                   bool                       // debug mode
-	Settings              Settings                   // application settings
+	ContestManager        ContestManagerProvider
+	IncomingEvents        IncomingEventsProvider    // normalized Telegram ingress dashboard
+	ModerationActions     ModerationActionsProvider // executor action journal
+	IncidentDashboard     IncidentDashboardProvider // aggregate incident counts without message contents
+	Dbg                   bool                      // debug mode
+	Settings              Settings                  // application settings
+	SauvageInternalToken  string
 	// EnvPinnedKeys lists RuleSet JSON paths whose value is pinned by an env var
 	// and will override the stored ruleset on the next restart.
 	EnvPinnedKeys map[string]bool
@@ -140,11 +142,24 @@ type MetricsProvider interface {
 type CommunityDashboardProvider interface {
 	Dashboard(ctx context.Context, since time.Time, limit int) (community.DashboardSnapshot, error)
 	ListRuleEvents(ctx context.Context, filter community.RuleEventFilter) ([]community.RuleEvent, error)
-	ListPresentations(ctx context.Context, limit int) ([]community.PresentationRecord, error)
+	ListPresentations(ctx context.Context, filter community.PresentationFilter) ([]community.PresentationRecord, error)
 	ListContestEntries(ctx context.Context, contestID string, limit int) ([]community.ContestEntryRecord, error)
 	ListViolations(ctx context.Context, limit int) ([]community.ViolationRecord, error)
 	ListMembers(ctx context.Context, filter community.MemberFilter) ([]community.MemberRecord, error)
 	ListUserReports(ctx context.Context, filter community.UserReportFilter) ([]community.UserReportRecord, error)
+}
+
+type ContestManagerProvider interface {
+	CreateDraft(ctx context.Context, input community.ContestDraftInput) (community.Contest, error)
+	UpdateDraft(ctx context.Context, id, announcement string) error
+	List(ctx context.Context, limit int) ([]community.Contest, error)
+	Get(ctx context.Context, id string) (community.Contest, error)
+	Publish(ctx context.Context, id string) (community.Contest, error)
+	BeginFinalize(ctx context.Context, id string) (community.Contest, error)
+	ConfirmFinalize(ctx context.Context, id string) (community.Contest, error)
+	Leaderboard(ctx context.Context, id string) ([]community.ContestLeaderboardEntry, error)
+	Appeals(ctx context.Context, id string, limit int) ([]community.ContestAppeal, error)
+	ResolveAppeal(ctx context.Context, token string, accepted bool, resolution string) (community.ContestAppeal, error)
 }
 
 // IncomingEventsProvider exposes aggregate normalized Telegram ingress data.
@@ -348,9 +363,9 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.AuthPasswd != "" || s.AuthHash != "" {
 		log.Printf("[INFO] basic auth enabled for webapi server")
 		if s.AuthHash != "" {
-			router.Use(rest.BasicAuthWithBcryptHashAndPrompt("tg-spam", s.AuthHash))
+			router.Use(s.sauvageInternalOrAuth(rest.BasicAuthWithBcryptHashAndPrompt("tg-spam", s.AuthHash)))
 		} else {
-			router.Use(rest.BasicAuthWithPrompt("tg-spam", s.AuthPasswd))
+			router.Use(s.sauvageInternalOrAuth(rest.BasicAuthWithPrompt("tg-spam", s.AuthPasswd)))
 		}
 	} else {
 		log.Printf("[INFO] basic auth disabled")

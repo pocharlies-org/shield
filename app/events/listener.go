@@ -95,6 +95,7 @@ type TelegramListener struct {
 	AutoLearner             AutoLearner
 	CommunityModerator      CommunityModerator
 	CommunityAssistantStore CommunityAssistantStore
+	CommunityContestStore   CommunityContestStore
 	CommunityChatID         int64
 	PresentationThreadID    int
 	OnReady                 func()
@@ -324,6 +325,8 @@ func (l *TelegramListener) eventLoop(ctx context.Context) error {
 		tbapi.UpdateTypeMessage,
 		tbapi.UpdateTypeEditedMessage,
 		tbapi.UpdateTypeCallbackQuery,
+		tbapi.UpdateTypeMessageReaction,
+		tbapi.UpdateTypeMessageReactionCount,
 	}
 
 	updates := l.TbAPI.GetUpdatesChan(u)
@@ -356,6 +359,12 @@ func (l *TelegramListener) eventLoop(ctx context.Context) error {
 }
 
 func (l *TelegramListener) handleUpdate(ctx context.Context, update tbapi.Update) error {
+	if handled, err := l.handleContestReaction(ctx, update); handled {
+		if err != nil {
+			log.Printf("[WARN] failed to record contest reaction: %v", err)
+		}
+		return nil
+	}
 	var fromUserName string
 	var fromUserID int64
 	if update.Message != nil && update.Message.From != nil {
@@ -522,6 +531,9 @@ func (l *TelegramListener) procAppealStart(ctx context.Context, update tbapi.Upd
 	}
 	payload := strings.TrimSpace(strings.TrimPrefix(text, prefix))
 	if payload == "" {
+		return false
+	}
+	if strings.HasPrefix(payload, "contest_") {
 		return false
 	}
 	if err := l.appealHandler.Handle(ctx, update.Message, payload); err != nil {

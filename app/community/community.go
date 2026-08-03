@@ -60,6 +60,67 @@ func NewStore(ctx context.Context, db *engine.SQL) (*Store, error) {
 			created_at TIMESTAMP NOT NULL,
 			PRIMARY KEY (tenant_id, contest_id, user_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS community_contests (
+			tenant_id TEXT NOT NULL,
+			contest_id TEXT NOT NULL,
+			chat_id BIGINT NOT NULL,
+			thread_id INTEGER NOT NULL DEFAULT 0,
+			title TEXT NOT NULL,
+			bases TEXT NOT NULL,
+			announcement_text TEXT NOT NULL,
+			status TEXT NOT NULL,
+			announcement_message_id INTEGER NOT NULL DEFAULT 0,
+			deadline_at TIMESTAMP NULL,
+			published_at TIMESTAMP NULL,
+			reaction_cutoff_at TIMESTAMP NULL,
+			consolidate_after TIMESTAMP NULL,
+			finalized_at TIMESTAMP NULL,
+			winner_user_id BIGINT NOT NULL DEFAULT 0,
+			winner_message_id INTEGER NOT NULL DEFAULT 0,
+			winner_reactions INTEGER NOT NULL DEFAULT 0,
+			final_snapshot TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (tenant_id, contest_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS community_contest_reactions (
+			tenant_id TEXT NOT NULL,
+			contest_id TEXT NOT NULL,
+			message_id INTEGER NOT NULL,
+			reaction_key TEXT NOT NULL,
+			total_count INTEGER NOT NULL,
+			updated_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (tenant_id, contest_id, message_id, reaction_key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS community_contest_reaction_actors (
+			tenant_id TEXT NOT NULL,
+			contest_id TEXT NOT NULL,
+			message_id INTEGER NOT NULL,
+			actor_key TEXT NOT NULL,
+			reaction_key TEXT NOT NULL,
+			updated_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (tenant_id, contest_id, message_id, actor_key, reaction_key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS community_contest_appeals (
+			tenant_id TEXT NOT NULL,
+			appeal_token TEXT NOT NULL,
+			contest_id TEXT NOT NULL,
+			chat_id BIGINT NOT NULL,
+			user_id BIGINT NOT NULL,
+			username TEXT NOT NULL DEFAULT '',
+			display_name TEXT NOT NULL DEFAULT '',
+			original_message_id INTEGER NOT NULL,
+			duplicate_message_id INTEGER NOT NULL,
+			photo_file_id TEXT NOT NULL DEFAULT '',
+			caption TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'offered',
+			appeal_text TEXT NOT NULL DEFAULT '',
+			resolution_text TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL,
+			PRIMARY KEY (tenant_id, appeal_token)
+		)`,
 		`CREATE TABLE IF NOT EXISTS community_violations (
 			tenant_id TEXT NOT NULL,
 			chat_id BIGINT NOT NULL,
@@ -124,6 +185,10 @@ func NewStore(ctx context.Context, db *engine.SQL) (*Store, error) {
 			ON community_members(tenant_id, chat_id, username, display_name)`,
 		`CREATE INDEX IF NOT EXISTS idx_community_user_reports_target
 			ON community_user_reports(tenant_id, chat_id, reported_user_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_community_contests_topic
+			ON community_contests(tenant_id, chat_id, thread_id, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_community_contest_appeals_status
+			ON community_contest_appeals(tenant_id, status, created_at)`,
 	}
 	store.lock.Lock()
 	defer store.lock.Unlock()
@@ -138,6 +203,8 @@ func NewStore(ctx context.Context, db *engine.SQL) (*Store, error) {
 		"ALTER TABLE community_rule_events ADD COLUMN message_text TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE community_rule_events ADD COLUMN user_message TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE community_rule_events ADD COLUMN duration_seconds BIGINT NOT NULL DEFAULT 0",
+		"ALTER TABLE community_rule_events ADD COLUMN contest_action BOOLEAN NOT NULL DEFAULT 0",
+		"ALTER TABLE community_rule_events ADD COLUMN appeal_token TEXT NOT NULL DEFAULT ''",
 	}
 	if db.Type() == engine.Postgres {
 		migrations = []string{
@@ -146,6 +213,8 @@ func NewStore(ctx context.Context, db *engine.SQL) (*Store, error) {
 			"ALTER TABLE community_rule_events ADD COLUMN IF NOT EXISTS message_text TEXT NOT NULL DEFAULT ''",
 			"ALTER TABLE community_rule_events ADD COLUMN IF NOT EXISTS user_message TEXT NOT NULL DEFAULT ''",
 			"ALTER TABLE community_rule_events ADD COLUMN IF NOT EXISTS duration_seconds BIGINT NOT NULL DEFAULT 0",
+			"ALTER TABLE community_rule_events ADD COLUMN IF NOT EXISTS contest_action BOOLEAN NOT NULL DEFAULT false",
+			"ALTER TABLE community_rule_events ADD COLUMN IF NOT EXISTS appeal_token TEXT NOT NULL DEFAULT ''",
 		}
 	}
 	for _, migration := range migrations {
@@ -187,14 +256,11 @@ func NewEngine(store *Store, config Config) (*Engine, error) {
 		if config.ChatID == 0 {
 			return nil, fmt.Errorf("community chat id is required")
 		}
-		if config.PresentationThreadID <= 0 || config.ContestThreadID <= 0 {
-			return nil, fmt.Errorf("presentation and contest thread ids are required")
+		if config.PresentationThreadID <= 0 {
+			return nil, fmt.Errorf("presentation thread id is required")
 		}
-		if config.PresentationThreadID == config.ContestThreadID {
+		if config.ContestThreadID > 0 && config.PresentationThreadID == config.ContestThreadID {
 			return nil, fmt.Errorf("presentation and contest threads must be different")
-		}
-		if strings.TrimSpace(config.ContestID) == "" {
-			return nil, fmt.Errorf("contest id is required")
 		}
 	}
 	return &Engine{store: store, config: config}, nil
@@ -213,7 +279,12 @@ func (e *Engine) Evaluate(ctx context.Context, msg events.CommunityMessage) (eve
 			return events.CommunityDecision{}, err
 		}
 	}
-	if msg.ThreadID != e.config.PresentationThreadID && msg.ThreadID != e.config.ContestThreadID {
+	activeContest, dynamicContest, err := e.store.ActiveContestForThread(ctx, msg.ChatID, msg.ThreadID)
+	if err != nil {
+		return events.CommunityDecision{}, err
+	}
+	legacyContest := msg.ThreadID == e.config.ContestThreadID && strings.TrimSpace(e.config.ContestID) != ""
+	if msg.ThreadID != e.config.PresentationThreadID && !dynamicContest && !legacyContest {
 		return events.CommunityDecision{}, nil
 	}
 	if existing, found, err := e.store.decisionForMessage(ctx, msg); err != nil {
@@ -230,7 +301,10 @@ func (e *Engine) Evaluate(ctx context.Context, msg events.CommunityMessage) (eve
 	if msg.ThreadID == e.config.PresentationThreadID {
 		return e.evaluatePresentation(ctx, msg)
 	}
-	return e.evaluateContest(ctx, msg)
+	if dynamicContest {
+		return e.evaluateContest(ctx, msg, activeContest.ContestID, true)
+	}
+	return e.evaluateContest(ctx, msg, e.config.ContestID, false)
 }
 
 func (e *Engine) evaluatePresentation(
@@ -272,16 +346,24 @@ func (e *Engine) evaluatePresentation(
 }
 
 func (e *Engine) evaluateContest(
-	ctx context.Context, msg events.CommunityMessage,
+	ctx context.Context, msg events.CommunityMessage, contestID string, strictDynamic bool,
 ) (events.CommunityDecision, error) {
-	if msg.IsReply || !msg.HasPhoto || msg.HasVideo {
+	invalid := msg.IsReply || !msg.HasPhoto || msg.HasVideo || (strictDynamic && msg.MediaGroupID != "")
+	if invalid && !strictDynamic {
 		return e.violation(ctx, msg, "contest_format",
 			"contest accepts one photo entry or one photo album; replies, text-only posts, and videos are not accepted",
 			"En el Concurso solo se admite una entrada de fotos por persona. No publiques respuestas, texto suelto ni vídeos.")
 	}
+	if invalid {
+		return e.contestViolation(ctx, msg, "contest_format",
+			"El concurso admite exactamente una foto por participación; no admite álbumes, respuestas, texto suelto ni vídeos.",
+			"En este concurso solo puedes publicar una foto. Se ha retirado el mensaje; "+
+				"los álbumes, respuestas, texto suelto y vídeos no cuentan como participación.",
+			contestID, 0, false, true)
+	}
 
 	entryKey := domainEntryKey(msg)
-	claimed, existingKey, existingMessageID, err := e.store.claimContest(ctx, msg, e.config.ContestID, entryKey)
+	claimed, existingKey, existingMessageID, err := e.store.claimContest(ctx, msg, contestID, entryKey)
 	if err != nil {
 		return events.CommunityDecision{}, err
 	}
@@ -298,9 +380,35 @@ func (e *Engine) evaluateContest(
 			Rule: "contest_entry_once", Reason: "first contest entry or continuation of the same album",
 		})
 	}
-	return e.violationRelated(ctx, msg, "contest_duplicate", "user already entered the current contest",
-		"Solo se permite una entrada por persona en este concurso. Esta publicación se ha retirado.",
-		existingMessageID)
+	if !strictDynamic {
+		return e.violationRelated(ctx, msg, "contest_duplicate", "user already entered the current contest",
+			"Solo se permite una entrada por persona en este concurso. Esta publicación se ha retirado.", existingMessageID)
+	}
+	return e.contestViolation(ctx, msg, "contest_duplicate", "La persona ya había participado en este concurso.",
+		"Ya has participado en este concurso. Hemos retirado la foto duplicada; tu primera foto sigue participando.",
+		contestID, existingMessageID, true, true)
+}
+
+func (e *Engine) contestViolation(ctx context.Context, msg events.CommunityMessage, rule, reason,
+	userMessage, contestID string, relatedMessageID int, appealable, applyActions bool,
+) (events.CommunityDecision, error) {
+	decision := events.CommunityDecision{Handled: true, Enforce: applyActions, Action: moderation.ActionWarn,
+		Rule: rule, Reason: reason, UserMessage: userMessage, RelatedMessageID: relatedMessageID,
+		ContestAction: applyActions}
+	if appealable && applyActions {
+		token, err := e.store.CreateContestAppealOffer(ctx, contestID, eventsCommunityMessageAlias{
+			ChatID: msg.ChatID, UserID: msg.UserID, MessageID: msg.MessageID, UserName: msg.UserName,
+			DisplayName: msg.DisplayName, PhotoFileID: msg.PhotoFileID, Text: msg.Text, ReceivedAt: msg.ReceivedAt,
+		}, relatedMessageID)
+		if err != nil {
+			return events.CommunityDecision{}, fmt.Errorf("create contest appeal offer: %w", err)
+		}
+		decision.AppealToken = token
+	}
+	if err := e.store.recordDecision(ctx, msg, decision, !applyActions); err != nil {
+		return events.CommunityDecision{}, err
+	}
+	return decision, nil
 }
 
 func (e *Engine) violation(
@@ -462,9 +570,11 @@ func (s *Store) recordViolationDecision(
 		RelatedMessageID int    `db:"related_message_id"`
 		DurationSeconds  int64  `db:"duration_seconds"`
 		Shadow           bool   `db:"shadow"`
+		ContestAction    bool   `db:"contest_action"`
+		AppealToken      string `db:"appeal_token"`
 	}
 	existingQuery := s.db.Adopt(`SELECT rule_code, action, reason, user_message, related_message_id,
-		duration_seconds, shadow
+		duration_seconds, shadow, contest_action, appeal_token
 		FROM community_rule_events WHERE tenant_id = ? AND event_key = ?`)
 	if existingErr := tx.GetContext(ctx, &stored, existingQuery, msg.TenantID, eventKey); existingErr == nil {
 		action := moderation.Action(stored.Action)
@@ -472,7 +582,8 @@ func (s *Store) recordViolationDecision(
 			Handled: true, Enforce: !stored.Shadow && action != moderation.ActionAllow,
 			GroupedContinuation: true, Action: action, Rule: stored.Rule, Reason: stored.Reason,
 			UserMessage: stored.UserMessage, RelatedMessageID: stored.RelatedMessageID,
-			Duration: time.Duration(stored.DurationSeconds) * time.Second,
+			Duration:      time.Duration(stored.DurationSeconds) * time.Second,
+			ContestAction: stored.ContestAction, AppealToken: stored.AppealToken,
 		}, nil
 	} else if !errors.Is(existingErr, sql.ErrNoRows) {
 		return events.CommunityDecision{}, fmt.Errorf("load grouped community violation: %w", existingErr)
@@ -507,14 +618,17 @@ func (s *Store) recordViolationDecision(
 	decision.RelatedMessageID = relatedMessageID
 	query := s.db.Adopt(`INSERT INTO community_rule_events
 		(tenant_id, event_key, chat_id, thread_id, message_id, related_message_id, media_group_id, user_id, rule_code,
-		 action, reason, message_text, user_message, duration_seconds, shadow, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 action, reason, message_text, user_message, duration_seconds, shadow, contest_action, appeal_token, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (tenant_id, event_key) DO NOTHING`)
-	if _, err = tx.ExecContext(ctx, query, msg.TenantID, eventKey, msg.ChatID, msg.ThreadID, msg.MessageID,
+	if _, err = tx.ExecContext(
+		ctx, query, msg.TenantID, eventKey, msg.ChatID, msg.ThreadID, msg.MessageID,
 		decision.RelatedMessageID, msg.MediaGroupID, msg.UserID, decision.Rule,
 		string(decision.Action), decision.Reason, msg.Text,
 		decision.UserMessage,
-		int64(decision.Duration/time.Second), shadow, timestamp(msg.ReceivedAt)); err != nil {
+		int64(decision.Duration/time.Second), shadow, decision.ContestAction,
+		decision.AppealToken, timestamp(msg.ReceivedAt),
+	); err != nil {
 		return events.CommunityDecision{}, fmt.Errorf("record community violation: %w", err)
 	}
 
@@ -533,14 +647,17 @@ func (s *Store) recordDecision(
 	eventKey := communityEventKey(decision.Rule, msg)
 	query := s.db.Adopt(`INSERT INTO community_rule_events
 		(tenant_id, event_key, chat_id, thread_id, message_id, related_message_id, media_group_id, user_id, rule_code,
-		 action, reason, message_text, user_message, duration_seconds, shadow, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 action, reason, message_text, user_message, duration_seconds, shadow, contest_action, appeal_token, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (tenant_id, event_key) DO NOTHING`)
-	if _, err := s.db.ExecContext(ctx, query, msg.TenantID, eventKey, msg.ChatID, msg.ThreadID, msg.MessageID,
+	if _, err := s.db.ExecContext(
+		ctx, query, msg.TenantID, eventKey, msg.ChatID, msg.ThreadID, msg.MessageID,
 		decision.RelatedMessageID, msg.MediaGroupID, msg.UserID, decision.Rule,
 		string(decision.Action), decision.Reason, msg.Text,
 		decision.UserMessage,
-		int64(decision.Duration/time.Second), shadow, timestamp(msg.ReceivedAt)); err != nil {
+		int64(decision.Duration/time.Second), shadow, decision.ContestAction,
+		decision.AppealToken, timestamp(msg.ReceivedAt),
+	); err != nil {
 		return fmt.Errorf("record community decision: %w", err)
 	}
 	return nil
@@ -560,9 +677,11 @@ func (s *Store) decisionForMessage(
 		RelatedMessageID int    `db:"related_message_id"`
 		DurationSeconds  int64  `db:"duration_seconds"`
 		Shadow           bool   `db:"shadow"`
+		ContestAction    bool   `db:"contest_action"`
+		AppealToken      string `db:"appeal_token"`
 	}
 	query := s.db.Adopt(`SELECT rule_code, action, reason, user_message, related_message_id,
-		duration_seconds, shadow
+		duration_seconds, shadow, contest_action, appeal_token
 		FROM community_rule_events
 		WHERE tenant_id = ? AND chat_id = ? AND message_id = ? AND user_id = ?
 		ORDER BY created_at ASC LIMIT 1`)
@@ -582,6 +701,8 @@ func (s *Store) decisionForMessage(
 		UserMessage:      stored.UserMessage,
 		RelatedMessageID: stored.RelatedMessageID,
 		Duration:         time.Duration(stored.DurationSeconds) * time.Second,
+		ContestAction:    stored.ContestAction,
+		AppealToken:      stored.AppealToken,
 	}, true, nil
 }
 

@@ -216,6 +216,7 @@ type options struct {
 		ForwardAuthHeader     string   `long:"forward-auth-header" env:"FORWARD_AUTH_HEADER" default:"X-Auth-Request-Email" description:"trusted proxy header containing the authenticated email"`
 		ForwardAuthEmails     []string `long:"forward-auth-email" env:"FORWARD_AUTH_EMAILS" env-delim:"," description:"exact email allowlist for trusted forward auth"`
 		ForwardAuthProxyCIDRs []string `long:"forward-auth-proxy-cidr" env:"FORWARD_AUTH_PROXY_CIDRS" env-delim:"," description:"source CIDRs allowed to assert forward-auth identity"`
+		SauvageInternalToken  string   `long:"sauvage-internal-token" env:"SAUVAGE_INTERNAL_TOKEN" description:"dedicated bearer token for the narrow Sauvage admin API"`
 	} `group:"server" namespace:"server" env-namespace:"SERVER"`
 
 	Training bool `long:"training" env:"TRAINING" description:"training mode, passive spam detection only"`
@@ -392,6 +393,9 @@ func execute(ctx context.Context, opts options) error {
 	}
 
 	tgListener := assembly.makeTelegramListener(opts, tbAPI)
+	if opts.Community.Enabled && assembly.CommunityStore != nil {
+		assembly.Web.ContestManager = community.NewContestManager(assembly.CommunityStore, tbAPI, opts.Community.ChatID)
+	}
 	if opts.Community.DailyDigestEnabled && assembly.CommunityStore != nil {
 		adminChatID, parseErr := strconv.ParseInt(strings.TrimSpace(opts.AdminGroup), 10, 64)
 		if parseErr != nil || adminChatID == 0 {
