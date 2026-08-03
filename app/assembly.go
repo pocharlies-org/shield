@@ -229,7 +229,6 @@ func activateServer(
 		ForwardAuthEmails:     opts.Server.ForwardAuthEmails,
 		ForwardAuthProxyCIDRs: opts.Server.ForwardAuthProxyCIDRs,
 		CommunityDashboard:    web.CommunityStore,
-		ContestManager:        web.ContestManager,
 		IncomingEvents:        web.IncomingEvents,
 		ModerationActions:     web.ModerationActions,
 		IncidentDashboard:     web.IncidentDashboard,
@@ -239,6 +238,9 @@ func activateServer(
 		EnvPinnedKeys:         envPinnedKeys(),
 		SauvageInternalToken:  opts.Server.SauvageInternalToken,
 	}}
+	if web.ContestManager != nil {
+		srv.ContestManager = web.ContestManager
+	}
 
 	go func() {
 		if err := srv.Run(ctx); err != nil {
