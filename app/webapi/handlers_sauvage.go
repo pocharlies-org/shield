@@ -30,6 +30,7 @@ type sauvageActivityView struct {
 	Settings Settings
 	Filter   community.RuleEventFilter
 	Days     int
+	Mode     string
 }
 
 func (s *Server) htmlSauvageOverviewHandler(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +72,7 @@ func (s *Server) htmlSauvageOverviewHandler(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) htmlSauvageActivityHandler(w http.ResponseWriter, r *http.Request) {
 	days := boundedQueryInt(r, "days", 7, 1, 90)
+	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
 	userQuery := strings.TrimSpace(r.URL.Query().Get("user"))
 	userID := queryInt64(r, "user")
 	if userID != 0 {
@@ -86,7 +88,7 @@ func (s *Server) htmlSauvageActivityHandler(w http.ResponseWriter, r *http.Reque
 		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
 		Limit:        boundedQueryInt(r, "limit", 200, 1, 1000),
 	}
-	switch r.URL.Query().Get("mode") {
+	switch mode {
 	case "shadow":
 		value := true
 		filter.Shadow = &value
@@ -105,7 +107,7 @@ func (s *Server) htmlSauvageActivityHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err = tmpl.ExecuteTemplate(w, "sauvage_activity.html", sauvageActivityView{
-		Events: events, Actions: actions, Settings: s.Settings, Filter: filter, Days: days,
+		Events: events, Actions: actions, Settings: s.Settings, Filter: filter, Days: days, Mode: mode,
 	}); err != nil {
 		http.Error(w, "No se pudo renderizar la actividad", http.StatusInternalServerError)
 	}

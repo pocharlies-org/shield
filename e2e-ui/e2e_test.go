@@ -305,6 +305,28 @@ func TestSauvageOperationsPagesLoad(t *testing.T) {
 	}
 }
 
+func TestSauvageActivityFiltersRemainSelected(t *testing.T) {
+	page := newPage(t)
+	resp, err := page.Goto(baseURL + "/sauvage/activity?days=14&thread=3&user=alberto&message=52926&rule=presentation_duplicate&action=restrict&mode=shadow")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Status())
+
+	values := map[string]string{
+		"input[name='days']":    "14",
+		"select[name='thread']": "3",
+		"input[name='user']":    "alberto",
+		"input[name='message']": "52926",
+		"input[name='rule']":    "presentation_duplicate",
+		"select[name='action']": "restrict",
+		"select[name='mode']":   "shadow",
+	}
+	for selector, expected := range values {
+		actual, valueErr := page.Locator(selector).InputValue()
+		require.NoError(t, valueErr, selector)
+		assert.Equal(t, expected, actual, selector)
+	}
+}
+
 func TestSauvageSummaryDoesNotExposePrivateSettings(t *testing.T) {
 	page := newPage(t)
 	resp, err := page.Goto(baseURL + "/api/sauvage/summary")
