@@ -348,6 +348,39 @@ img { image-rendering: pixelated; }
 
 textarea.input { resize: vertical; min-height: 70px; }
 
+.deadline-picker-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
+    gap: var(--space-3);
+    align-items: start;
+}
+
+.date-picker-control {
+    display: flex;
+    gap: var(--space-2);
+    align-items: stretch;
+}
+
+.date-picker-control .input {
+    flex: 1;
+    min-width: 0;
+    color-scheme: dark;
+}
+
+.date-picker-button {
+    white-space: nowrap;
+}
+
+.date-picker-button i {
+    margin-right: var(--space-1);
+}
+
+.form-help {
+    margin-top: var(--space-1);
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
 .checkbox { width: 16px; height: 16px; accent-color: var(--accent); }
 
 .form-row {
@@ -500,8 +533,10 @@ textarea.input { resize: vertical; min-height: 70px; }
     .metric-grid { grid-template-columns: repeat(2, 1fr); }
     .only-mobile { display: block; }
     .only-desktop { display: none; }
+    .deadline-picker-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px) {
     .metric-grid { grid-template-columns: 1fr; }
+    .date-picker-control { flex-direction: column; }
 }

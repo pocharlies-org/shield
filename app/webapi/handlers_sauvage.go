@@ -239,15 +239,10 @@ func (s *Server) htmlSauvageContestsHandler(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) sauvageContestDraftHandler(w http.ResponseWriter, r *http.Request) {
 	title, bases := strings.TrimSpace(r.FormValue("title")), strings.TrimSpace(r.FormValue("bases"))
-	var deadline *time.Time
-	if value := strings.TrimSpace(r.FormValue("deadline")); value != "" {
-		parsed, err := time.ParseInLocation("2006-01-02T15:04", value, time.Local)
-		if err != nil {
-			http.Error(w, "Fecha límite no válida", http.StatusBadRequest)
-			return
-		}
-		parsed = parsed.UTC()
-		deadline = &parsed
+	deadline, err := parseSauvageContestDeadline(r.FormValue("deadline"), r.FormValue("deadline_time"))
+	if err != nil {
+		http.Error(w, "Fecha límite no válida", http.StatusBadRequest)
+		return
 	}
 	user, _, _ := r.BasicAuth()
 	contest, err := s.ContestManager.CreateDraft(r.Context(), community.ContestDraftInput{
@@ -258,6 +253,31 @@ func (s *Server) sauvageContestDraftHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	http.Redirect(w, r, "/sauvage/contests?contest="+contest.ContestID, http.StatusSeeOther)
+}
+
+func parseSauvageContestDeadline(dateValue, timeValue string) (*time.Time, error) {
+	dateValue = strings.TrimSpace(dateValue)
+	if dateValue == "" {
+		return nil, nil
+	}
+
+	// Keep accepting the previous datetime-local value so existing API clients and
+	// saved forms remain compatible after the UI switches to separate controls.
+	value := dateValue
+	if !strings.Contains(value, "T") {
+		timeValue = strings.TrimSpace(timeValue)
+		if timeValue == "" {
+			timeValue = "23:59"
+		}
+		value += "T" + timeValue
+	}
+
+	parsed, err := time.ParseInLocation("2006-01-02T15:04", value, time.Local)
+	if err != nil {
+		return nil, err
+	}
+	parsed = parsed.UTC()
+	return &parsed, nil
 }
 
 func (s *Server) sauvageContestPublishHandler(w http.ResponseWriter, r *http.Request) {

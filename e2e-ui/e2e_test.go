@@ -311,6 +311,15 @@ func TestSauvageOperationsPagesLoad(t *testing.T) {
 				require.NoError(t, countErr)
 				assert.Equal(t, 1, listCount)
 			}
+			if tt.path == "/sauvage/contests" {
+				dateInput := page.Locator("input#contest-deadline-date")
+				waitVisible(t, dateInput)
+				inputType, attrErr := dateInput.GetAttribute("type")
+				require.NoError(t, attrErr)
+				assert.Equal(t, "date", inputType)
+				waitVisible(t, page.Locator("button:has-text('Abrir calendario')"))
+				waitVisible(t, page.Locator("input#contest-deadline-time"))
+			}
 		})
 	}
 }
