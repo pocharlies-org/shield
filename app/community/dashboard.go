@@ -289,8 +289,9 @@ func (s *Store) ListPresentations(ctx context.Context, filter PresentationFilter
 	where := []string{"p.tenant_id = ?"}
 	args := []any{s.db.TenantID()}
 	if query := normalizedSearch(filter.UserQuery); query != "" {
-		where = append(where, `(LOWER(COALESCE(m.username, '')) LIKE ? OR LOWER(COALESCE(m.display_name, '')) LIKE ?)`)
-		args = append(args, query, query)
+		where = append(where, `(LOWER(COALESCE(m.username, '')) LIKE ? OR LOWER(COALESCE(m.display_name, '')) LIKE ?
+			OR LOWER(CAST(p.user_id AS TEXT)) LIKE ?)`)
+		args = append(args, query, query, query)
 	}
 	if query := normalizedSearch(filter.MessageQuery); query != "" {
 		where = append(where, `(LOWER(COALESCE(e.message_text, '')) LIKE ? OR CAST(p.first_message_id AS TEXT) LIKE ?)`)

@@ -33,6 +33,20 @@ type sauvageActivityView struct {
 	Mode     string
 }
 
+type sauvagePresentationsView struct {
+	Records  []community.PresentationRecord
+	Settings Settings
+	Filter   community.PresentationFilter
+}
+
+type sauvagePresentationUserSuggestion struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	UserID      int64  `json:"user_id"`
+	UserName    string `json:"username,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
 func (s *Server) htmlSauvageOverviewHandler(w http.ResponseWriter, r *http.Request) {
 	days := boundedQueryInt(r, "days", 7, 1, 90)
 	since := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
@@ -124,13 +138,48 @@ func (s *Server) htmlSauvagePresentationsHandler(w http.ResponseWriter, r *http.
 		http.Error(w, "No se pudieron cargar las presentaciones", http.StatusInternalServerError)
 		return
 	}
-	data := struct {
-		Records  []community.PresentationRecord
-		Settings Settings
-		Filter   community.PresentationFilter
-	}{records, s.Settings, filter}
+	data := sauvagePresentationsView{
+		Records: records, Settings: s.Settings, Filter: filter,
+	}
 	if err = tmpl.ExecuteTemplate(w, "sauvage_presentations.html", data); err != nil {
 		http.Error(w, "No se pudo renderizar la página", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) sauvagePresentationUserSuggestionsHandler(w http.ResponseWriter, r *http.Request) {
+	records, err := s.CommunityDashboard.ListPresentations(r.Context(), community.PresentationFilter{
+		UserQuery: strings.TrimSpace(r.URL.Query().Get("q")),
+		Limit:     20,
+	})
+	if err != nil {
+		http.Error(w, "No se pudieron buscar usuarios de presentaciones", http.StatusInternalServerError)
+		return
+	}
+	suggestions := make([]sauvagePresentationUserSuggestion, 0, len(records))
+	for _, record := range records {
+		suggestions = append(suggestions, newSauvagePresentationUserSuggestion(record))
+	}
+	rest.RenderJSON(w, suggestions)
+}
+
+func newSauvagePresentationUserSuggestion(record community.PresentationRecord) sauvagePresentationUserSuggestion {
+	userName := strings.TrimPrefix(strings.TrimSpace(record.UserName), "@")
+	displayName := strings.TrimSpace(record.DisplayName)
+	value := displayName
+	if userName != "" {
+		value = "@" + userName
+	}
+	if value == "" {
+		value = strconv.FormatInt(record.UserID, 10)
+	}
+
+	identity := value
+	if displayName != "" && userName != "" {
+		identity = fmt.Sprintf("%s (@%s)", displayName, userName)
+	}
+	return sauvagePresentationUserSuggestion{
+		Value: value, Label: fmt.Sprintf("%s · ID %d", identity, record.UserID), UserID: record.UserID,
+		UserName: userName, DisplayName: displayName,
 	}
 }
 

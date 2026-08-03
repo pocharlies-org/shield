@@ -2,7 +2,45 @@
 <body x-data="{ navOpen:false }">{{template "sidebar.html"}}<main class="main">
 <header class="topbar"><button class="topbar__burger" @click="navOpen=!navOpen"><i class="bi bi-list"></i></button><h2 class="page-title">Presentaciones registradas</h2></header>
 <div class="content"><div class="alert alert-info">Una fila significa que esa persona ya utilizó su única presentación permitida.</div>
-<form class="filter-bar" method="get"><div class="field"><label>Usuario</label><input class="input" name="user" value="{{.Filter.UserQuery}}" placeholder="Nombre o @usuario"></div><div class="field"><label>Mensaje</label><input class="input" name="message" value="{{.Filter.MessageQuery}}" placeholder="Texto o ID"></div><button class="btn btn-accent">Buscar</button></form>
+<form class="filter-bar" method="get">
+<div class="field"><label for="presentation-user-search">Usuario</label><input class="input" id="presentation-user-search" type="search" name="user" value="{{.Filter.UserQuery}}" placeholder="Nombre, @usuario o ID" list="presentation-user-options" autocomplete="off" aria-describedby="presentation-user-help"><datalist id="presentation-user-options"></datalist><div class="small muted" id="presentation-user-help">Empieza a escribir para ver personas con presentación.</div></div>
+<div class="field"><label>Mensaje</label><input class="input" name="message" value="{{.Filter.MessageQuery}}" placeholder="Texto o ID"></div><button class="btn btn-accent">Buscar</button>
+</form>
 <div class="table-wrap"><table class="table"><thead><tr><th>Usuario</th><th>Presentación</th><th>Mensaje exacto</th><th>Tipo</th><th>Fecha</th></tr></thead>
 <tbody>{{range .Records}}<tr><td><a href="/sauvage/users/{{.UserID}}">{{if .DisplayName}}{{.DisplayName}}{{else if .UserName}}@{{.UserName}}{{else}}Usuario {{.UserID}}{{end}}</a>{{if .UserName}}<div class="small muted">@{{.UserName}}</div>{{end}}<div class="small muted">ID {{.UserID}}</div></td><td><a href="{{telegramMessageURL .ChatID .ThreadID .FirstMessageID}}" target="_blank" rel="noreferrer">Abrir mensaje {{.FirstMessageID}} <i class="bi bi-box-arrow-up-right"></i></a></td><td>{{if .MessageText}}<div class="exact-message">{{.MessageText}}</div>{{else}}<span class="muted">Sin texto</span>{{end}}</td><td>{{if hasPrefix .EntryKey "album:"}}Álbum de fotos{{else}}Foto{{end}}</td><td>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td></tr>
-{{else}}<tr><td colspan="5" class="center-text muted">Todavía no hay presentaciones registradas</td></tr>{{end}}</tbody></table></div></div></main></body></html>
+{{else}}<tr><td colspan="5" class="center-text muted">Todavía no hay presentaciones registradas</td></tr>{{end}}</tbody></table></div></div></main>
+<script>
+(() => {
+    const input = document.getElementById('presentation-user-search');
+    const options = document.getElementById('presentation-user-options');
+    if (!input || !options) return;
+    let timer;
+    let request;
+    const loadSuggestions = async () => {
+        if (request) request.abort();
+        request = new AbortController();
+        try {
+            const response = await fetch('/sauvage/presentations/suggestions?q=' + encodeURIComponent(input.value.trim()), {
+                signal: request.signal,
+                headers: {'Accept': 'application/json'}
+            });
+            if (!response.ok) return;
+            const suggestions = await response.json();
+            options.replaceChildren(...suggestions.map((suggestion) => {
+                const option = document.createElement('option');
+                option.value = suggestion.value;
+                option.label = suggestion.label;
+                return option;
+            }));
+        } catch (error) {
+            if (error.name !== 'AbortError') console.warn('No se pudo cargar el autocompletado de usuarios');
+        }
+    };
+    input.addEventListener('focus', loadSuggestions);
+    input.addEventListener('input', () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(loadSuggestions, 180);
+    });
+})();
+</script>
+</body></html>
