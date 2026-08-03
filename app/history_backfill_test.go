@@ -42,6 +42,35 @@ func TestHistoricalMessageFromArchiveRowKeepsRealReply(t *testing.T) {
 	assert.True(t, message.IsReply)
 }
 
+func TestArchivedTopicFromReplyRecoversLegacyPresentationTopic(t *testing.T) {
+	topics := map[int]struct{}{3: {}, 6: {}}
+
+	assert.Equal(t, 3, archivedTopicFromReply("tg_-1003672565710_3", topics))
+	assert.Equal(t, 6, archivedTopicFromReply("6", topics))
+	assert.Zero(t, archivedTopicFromReply("tg_-1003672565710_568", topics))
+	assert.Zero(t, archivedTopicFromReply("not-a-message", topics))
+}
+
+func TestHistoricalMessageFromLegacyArchiveRowTreatsRecoveredRootAsTopLevelPost(t *testing.T) {
+	row := archiveMessageRow{
+		ArchiveID:      "tg_-1003672565710_568",
+		SenderID:       "tg_6524317158",
+		SenderName:     "LadyVibraphone",
+		ReceivedAt:     time.Date(2026, 4, 6, 9, 12, 11, 0, time.UTC),
+		Content:        "Hola, soy una mujer de 45 años.",
+		MessageType:    "PHOTO",
+		ReplyToMessage: "tg_-1003672565710_3",
+	}
+	row.TopicID = archivedTopicFromReply(row.ReplyToMessage, map[int]struct{}{3: {}})
+
+	message, err := historicalMessageFromArchiveRow(row, -1003672565710, "personal")
+	require.NoError(t, err)
+	assert.Equal(t, 3, message.ThreadID)
+	assert.False(t, message.IsReply)
+	assert.Equal(t, 568, message.MessageID)
+	assert.Equal(t, int64(6524317158), message.UserID)
+}
+
 func TestAssignSyntheticMediaGroupsReconstructsAlbumsAndHonorsWindow(t *testing.T) {
 	base := time.Date(2026, 7, 22, 16, 24, 20, 0, time.UTC)
 	messages := []events.HistoricalMessage{

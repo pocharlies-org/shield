@@ -162,6 +162,14 @@ func loadArchivedTelegramMessages(
 	summary := historyBackfillLoadSummary{SourceRows: len(rows)}
 	messages := make([]events.HistoricalMessage, 0, len(rows))
 	for _, row := range rows {
+		// Older telegram-sync rows did not persist metadata.topic_id. Telegram
+		// still recorded an ordinary forum post as a reply to the topic's root
+		// service message, so recover the topic when that root is one of the
+		// explicitly selected backfill topics. Real replies point at a different
+		// message and remain replies after conversion.
+		if row.TopicID == 0 {
+			row.TopicID = archivedTopicFromReply(row.ReplyToMessage, topics)
+		}
 		message, err := historicalMessageFromArchiveRow(row, opts.Community.ChatID, opts.Backfill.Account)
 		if err != nil {
 			summary.SkippedInvalid++
@@ -181,6 +189,20 @@ func loadArchivedTelegramMessages(
 	assignSyntheticMediaGroups(messages, opts.Backfill.AlbumWindow)
 	summary.SelectedRows = len(messages)
 	return messages, summary, nil
+}
+
+func archivedTopicFromReply(replyToMessage string, topics map[int]struct{}) int {
+	if strings.TrimSpace(replyToMessage) == "" {
+		return 0
+	}
+	replyID, err := parseTelegramMessageID(replyToMessage)
+	if err != nil {
+		return 0
+	}
+	if _, selected := topics[replyID]; selected {
+		return replyID
+	}
+	return 0
 }
 
 func historyBackfillTopics(opts options) []int {
