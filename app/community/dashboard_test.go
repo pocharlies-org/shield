@@ -30,6 +30,7 @@ func TestDashboardSummarizesAndFiltersCommunityData(t *testing.T) {
 		HasPhoto: true, ReceivedAt: now,
 	})
 	require.NoError(t, err)
+	require.NoError(t, store.UpdateMemberIdentity(ctx, -1001, 10, "@alberto", "Alberto"))
 	_, err = engine.Evaluate(ctx, events.CommunityMessage{
 		TenantID: "sauvage", ChatID: -1001, ThreadID: 3, MessageID: 2, UserID: 10,
 		HasPhoto: true, Text: "Presentación repetida literal", ReceivedAt: now,
@@ -67,6 +68,11 @@ func TestDashboardSummarizesAndFiltersCommunityData(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, byMessage, 1)
 	assert.Equal(t, 2, byMessage[0].MessageID)
+
+	byPresentationUserID, err := store.ListPresentations(ctx, PresentationFilter{UserQuery: "10", Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, byPresentationUserID, 1)
+	assert.Equal(t, "alberto", byPresentationUserID[0].UserName)
 }
 
 func TestDashboardCollapsesLegacyAlbumRowsIntoOneLogicalDecision(t *testing.T) {

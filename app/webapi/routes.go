@@ -163,6 +163,7 @@ func (s *Server) setupWebUIRoutes(router *routegroup.Bundle) {
 			webUI.HandleFunc("GET /sauvage", s.htmlSauvageOverviewHandler)
 			webUI.HandleFunc("GET /sauvage/activity", s.htmlSauvageActivityHandler)
 			webUI.HandleFunc("GET /sauvage/presentations", s.htmlSauvagePresentationsHandler)
+			webUI.HandleFunc("GET /sauvage/presentations/suggestions", s.sauvagePresentationUserSuggestionsHandler)
 			webUI.HandleFunc("GET /sauvage/contests", s.htmlSauvageContestsHandler)
 			if s.ContestManager != nil {
 				webUI.HandleFunc("POST /sauvage/contests/draft", s.sauvageContestDraftHandler)

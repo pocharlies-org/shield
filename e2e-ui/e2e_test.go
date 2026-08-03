@@ -301,6 +301,16 @@ func TestSauvageOperationsPagesLoad(t *testing.T) {
 				waitVisible(t, page.Locator("input[name='q']"))
 				waitVisible(t, page.Locator("h3:has-text('Reportes recibidos')"))
 			}
+			if tt.path == "/sauvage/presentations" {
+				userSearch := page.Locator("input[name='user']")
+				waitVisible(t, userSearch)
+				listID, attrErr := userSearch.GetAttribute("list")
+				require.NoError(t, attrErr)
+				assert.Equal(t, "presentation-user-options", listID)
+				listCount, countErr := page.Locator("datalist#presentation-user-options").Count()
+				require.NoError(t, countErr)
+				assert.Equal(t, 1, listCount)
+			}
 		})
 	}
 }
