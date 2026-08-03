@@ -49,7 +49,7 @@ func TestParseSauvageContestDeadlineKeepsLegacyDatetimeLocal(t *testing.T) {
 
 func TestParseSauvageContestDeadlineRejectsInvalidValues(t *testing.T) {
 	deadline, err := parseSauvageContestDeadline("31/08/2026", "21:30")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, deadline)
 }
 
