@@ -69,6 +69,69 @@ func TestModerationActionsAdd(t *testing.T) {
 	assert.Equal(t, 1, summary.Failed)
 }
 
+func TestModerationActionsRecentDetailedEnrichesOperationalContext(t *testing.T) {
+	ctx := context.Background()
+	db, err := engine.NewSqlite(":memory:", "gr1")
+	require.NoError(t, err)
+	defer db.Close()
+
+	store, err := NewModerationActions(ctx, db)
+	require.NoError(t, err)
+	for _, schema := range []string{
+		`CREATE TABLE incidents (tenant_id TEXT, idempotency_key TEXT, spam_user_id INTEGER,
+			spam_user_name TEXT, message_text TEXT, reason_text TEXT, reason_code TEXT)`,
+		`CREATE TABLE incoming_events (tenant_id TEXT, idempotency_key TEXT, message_id INTEGER,
+			message_thread_id INTEGER, decision_reason TEXT)`,
+		`CREATE TABLE community_rule_events (tenant_id TEXT, chat_id INTEGER, message_id INTEGER,
+			user_id INTEGER, thread_id INTEGER, message_text TEXT, reason TEXT, rule_code TEXT)`,
+		`CREATE TABLE user_messages (tenant_id TEXT, chat_id INTEGER, msg_id INTEGER,
+			user_id INTEGER, user_name TEXT)`,
+		`CREATE TABLE community_members (tenant_id TEXT, chat_id INTEGER, user_id INTEGER,
+			username TEXT, display_name TEXT)`,
+	} {
+		_, err = db.Exec(schema)
+		require.NoError(t, err)
+	}
+	tenantID := store.TenantID()
+	_, err = db.Exec(`INSERT INTO incidents
+		(tenant_id, idempotency_key, spam_user_id, spam_user_name, message_text, reason_text, reason_code)
+		VALUES (?, 'key-1', 42, 'Alicia antigua', 'Mensaje literal', 'Insulto directo', 'llm_openai')`, tenantID)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO incoming_events
+		(tenant_id, idempotency_key, message_id, message_thread_id, decision_reason)
+		VALUES (?, 'key-1', 77, 3, 'warning strike')`, tenantID)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO user_messages
+		(tenant_id, chat_id, msg_id, user_id, user_name) VALUES (?, 123, 77, 42, 'alicia_old')`, tenantID)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO community_members
+		(tenant_id, chat_id, user_id, username, display_name) VALUES (?, 123, 42, 'alicia', 'Alicia')`, tenantID)
+	require.NoError(t, err)
+
+	require.NoError(t, store.Add(ctx, ModerationActionEntry{
+		EventID: "evt-1", IdempotencyKey: "key-1", Command: "mute_user", Status: "simulated",
+		ChatID: 123, SubjectID: 42, MessageID: 0,
+	}))
+	require.NoError(t, store.Add(ctx, ModerationActionEntry{
+		EventID: "evt-1", IdempotencyKey: "key-1", Command: "delete_message", Status: "failed",
+		ChatID: 123, MessageID: 77, LastError: "message cannot be deleted",
+	}))
+
+	entries, err := store.RecentDetailed(ctx, time.Time{}, 10)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	for _, entry := range entries {
+		assert.Equal(t, int64(42), entry.TargetUserID)
+		assert.Equal(t, "alicia", entry.UserName)
+		assert.Equal(t, "Alicia", entry.DisplayName)
+		assert.Equal(t, 77, entry.SourceMessageID)
+		assert.Equal(t, 3, entry.ThreadID)
+		assert.Equal(t, "Mensaje literal", entry.MessageText)
+		assert.Equal(t, "Insulto directo", entry.Description)
+		assert.Equal(t, "llm_openai", entry.ReasonCode)
+	}
+}
+
 func TestModerationActionsLast(t *testing.T) {
 	db, err := engine.NewSqlite(":memory:", "gr1")
 	require.NoError(t, err)

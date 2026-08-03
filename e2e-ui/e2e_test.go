@@ -337,6 +337,19 @@ func TestSauvageActivityFiltersRemainSelected(t *testing.T) {
 	}
 }
 
+func TestSauvageTelegramActionsShowsOperationalColumns(t *testing.T) {
+	page := newPage(t)
+	resp, err := page.Goto(baseURL + "/sauvage/activity")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.Status())
+
+	require.NoError(t, page.Locator("button.tab:has-text('Acciones Telegram')").Click())
+	actionsTable := page.Locator("section").Last().Locator("table")
+	for _, heading := range []string{"Usuario", "ID / enlace", "Mensaje exacto", "Descripción / motivo", "Error"} {
+		waitVisible(t, actionsTable.Locator("th:has-text('"+heading+"')"))
+	}
+}
+
 func TestSauvageSummaryDoesNotExposePrivateSettings(t *testing.T) {
 	page := newPage(t)
 	resp, err := page.Goto(baseURL + "/api/sauvage/summary")
