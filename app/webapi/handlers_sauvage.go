@@ -549,13 +549,10 @@ func topicName(threadID int) string {
 	}
 }
 
-func telegramMessageURL(chatID int64, threadID, messageID int) string {
+func telegramMessageURL(chatID int64, _ int, messageID int) string {
 	chat := strings.TrimPrefix(strconv.FormatInt(chatID, 10), "-100")
 	if chat == "" || messageID <= 0 {
 		return ""
-	}
-	if threadID > 0 {
-		return fmt.Sprintf("https://t.me/c/%s/%d/%d", chat, threadID, messageID)
 	}
 	return fmt.Sprintf("https://t.me/c/%s/%d", chat, messageID)
 }

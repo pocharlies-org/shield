@@ -69,7 +69,8 @@ func TestCommunityPrivateAssistantPresentationAndReportFlow(t *testing.T) {
 	require.NoError(t, assistant.Handle(context.Background(), &tbapi.Message{
 		Chat: tbapi.Chat{ID: 7, Type: "private"}, From: sender, Text: "/mipresentacion",
 	}))
-	require.Contains(t, replies[len(replies)-1], "https://t.me/c/1234/3/99")
+	require.Contains(t, replies[len(replies)-1], "https://t.me/c/1234/99")
+	require.NotContains(t, replies[len(replies)-1], "https://t.me/c/1234/3/99")
 
 	require.NoError(t, assistant.Handle(context.Background(), &tbapi.Message{
 		Chat: tbapi.Chat{ID: 7, Type: "private"}, From: sender, Text: "/reportar @target",
