@@ -279,7 +279,7 @@ func communityMemberLabel(member CommunityMember) string {
 	return strings.Join(parts, " ")
 }
 
-func telegramForumMessageURL(chatID int64, _ int, messageID int) string {
+func telegramForumMessageURL(chatID int64, _, messageID int) string {
 	internal := strings.TrimPrefix(strconv.FormatInt(chatID, 10), "-100")
 	return fmt.Sprintf("https://t.me/c/%s/%d", internal, messageID)
 }

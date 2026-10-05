@@ -19,6 +19,10 @@ permissions:
 jobs:
   build:
     name: build
+    # 2026-10-05 devops · fuera de pool temporal: `go test -race` requiere cgo y la
+    # imagen del runner ARC no trae gcc (CGO_ENABLED=0 → «-race requires cgo»,
+    # run 37264178066). Migrar declarando gcc (apt-get) o con actions/setup-go
+    # con cgo habilitado (skill ci-runners-arc, INFRA-548).
     runs-on: ubuntu-latest
     steps:
     - name: checkout
