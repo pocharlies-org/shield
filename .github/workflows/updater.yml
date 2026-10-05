@@ -18,9 +18,10 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: arc-k8s
             artifact: linux-amd64
           - platform: linux/arm64
+            # 2026-10-05 devops · fuera de pool: no existe pool arm64 en el clúster (skill ci-runners-arc, INFRA-548)
             runner: ubuntu-24.04-arm
             artifact: linux-arm64
     runs-on: ${{ matrix.runner }}
@@ -88,7 +89,7 @@ jobs:
 
   merge:
     if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
+    runs-on: arc-k8s
     needs: build
     permissions:
       contents: read
