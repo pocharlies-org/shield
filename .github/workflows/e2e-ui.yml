@@ -21,6 +21,8 @@ permissions:
 
 jobs:
   e2e-ui:
+    # INFRA-1218: job del upstream redstone-md/shield; queda skipped en el fork
+    if: github.repository == 'redstone-md/shield'
     runs-on: arc-k8s
     timeout-minutes: 10
     env:
