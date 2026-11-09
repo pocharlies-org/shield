@@ -18,6 +18,8 @@ permissions:
 
 jobs:
   build:
+    # INFRA-1218: job del upstream redstone-md/shield; queda skipped en el fork
+    if: github.repository == 'redstone-md/shield'
     name: build
     # 2026-10-05 devops · fuera de pool temporal: `go test -race` requiere cgo y la
     # imagen del runner ARC no trae gcc (CGO_ENABLED=0 → «-race requires cgo»,

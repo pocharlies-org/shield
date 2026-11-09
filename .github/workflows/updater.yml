@@ -13,6 +13,8 @@ on:
 
 jobs:
   build:
+    # INFRA-1218: job del upstream redstone-md/shield; queda skipped en el fork
+    if: github.repository == 'redstone-md/shield'
     strategy:
       fail-fast: false
       matrix:
@@ -88,7 +90,8 @@ jobs:
           retention-days: 1
 
   merge:
-    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+    # INFRA-1218: job del upstream redstone-md/shield; queda skipped en el fork
+    if: github.repository == 'redstone-md/shield' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/'))
     runs-on: arc-k8s
     needs: build
     permissions:
